@@ -12746,7 +12746,7 @@ import { join as join2 } from "node:path";
 
 // src/product.ts
 var CLI_NAME = "harbyn";
-var CLI_VERSION = true ? "0.1.0" : "0.0.0-dev";
+var CLI_VERSION = true ? "0.1.1" : "0.0.0-dev";
 
 // src/remote-feed.ts
 var PRODUCTION_KEYS = {

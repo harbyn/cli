@@ -37,7 +37,7 @@ jobs:
           pnpm build
           git diff --exit-code -- dist/action
           mkdir out
-          npm pack --pack-destination out dist/package
+          npm pack --pack-destination out ./dist/package
           cp dist/action/harbyn-action.mjs out/
           cd out && sha256sum * > SHA256SUMS
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
