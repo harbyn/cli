@@ -317,6 +317,10 @@ describe.each(["CLI", "action"])("%s bundle contents", (which) => {
     expect(urls.sort()).toEqual(expected.sort());
   });
 
+  it("names no path from the machine that built it", () => {
+    expect(code()).not.toMatch(/(?<![A-Za-z])[A-Za-z]:\\|\/home\/|\/Users\/|\/runner\//);
+  });
+
   it("has no invisible or direction-changing characters (Trojan Source)", () => {
     const hidden = (cp: number): boolean =>
       (cp < 0x20 && cp !== 0x09 && cp !== 0x0a && cp !== 0x0d) ||

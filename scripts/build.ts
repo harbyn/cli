@@ -45,12 +45,18 @@ const zodEnglishOnly: Plugin = {
   setup(pluginBuild) {
     pluginBuild.onResolve({ filter: /^\.\.\/locales\/index\.js$/ }, (args) =>
       /[\\/]zod[\\/]v4[\\/](?:classic|core)[\\/]/.test(args.importer)
-        ? { path: join(dirname(args.importer), "..", "locales", "en.js"), namespace: "zod-locales" }
+        ? {
+            path: relative(root, join(dirname(args.importer), "..", "locales", "en.js")).replaceAll(
+              "\\",
+              "/",
+            ),
+            namespace: "zod-locales",
+          }
         : undefined,
     );
     pluginBuild.onLoad({ filter: /.*/, namespace: "zod-locales" }, (args) => ({
       contents: `export { default as en } from "./en.js";`,
-      resolveDir: dirname(args.path),
+      resolveDir: join(root, dirname(args.path)),
       loader: "js",
     }));
   },
