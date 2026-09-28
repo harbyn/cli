@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   levelOf,
   MAX_ANNOTATIONS_PER_LEVEL,
+  MAX_SUMMARY_ROWS,
   mdText,
   toAnnotations,
   toStepSummary,
@@ -126,6 +127,15 @@ describe("step summary", () => {
     expect(md).toContain("src/a.ts:3");
     expect(md).toContain("[source](https://acme.example/changelog)");
     expect(md).toContain("Nothing about this repository was sent anywhere.");
+  });
+
+  it("does not claim nothing was sent when the upload is on, and caps the table", () => {
+    const many = Array.from({ length: MAX_SUMMARY_ROWS + 3 }, (_, i) => finding({ line: i + 1 }));
+    const md = toStepSummary(result(many), TODAY, "harbyn", "", true);
+    expect(md).not.toContain("Nothing about this repository was sent anywhere.");
+    expect(md).toContain("The upload below is everything that leaves the runner.");
+    expect(md.split("\n").filter((l) => l.includes("src/a.ts:"))).toHaveLength(MAX_SUMMARY_ROWS);
+    expect(md).toContain(`**${MAX_SUMMARY_ROWS + 3}** lines are affected`);
   });
 
   it("abuse: hostile paths and titles cannot become markup or break the table", () => {

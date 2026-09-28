@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { ChangeEvent } from "../src/schema/index.ts";
+import { type ChangeEvent, MANIFEST_LIMITS } from "../src/schema/index.ts";
 import type { ScanResult } from "../src/report.ts";
 import {
   INGEST_URL,
@@ -96,6 +96,35 @@ describe("manifest built by the Action", () => {
       '"path"',
     ])
       expect(sent).not.toContain(leak);
+  });
+
+  it("abuse: a repository that overflows the limits gets a clamped manifest, not an error", () => {
+    const many = MANIFEST_LIMITS.count + 1;
+    const flood = {
+      ...result,
+      findings: [
+        ...Array.from({ length: many }, (_, i) => ({
+          event: retire,
+          via: "model-id",
+          token: "gpt-4",
+          path: "a.ts",
+          line: i + 1,
+          context: "code",
+        })),
+        ...Array.from({ length: MANIFEST_LIMITS.findings + 5 }, (_, i) => ({
+          event: event(`acme/2026-01-01-change-${i}`, "acme", []),
+          via: "model-id",
+          token: "x",
+          path: "b.ts",
+          line: i + 1,
+          context: "code",
+        })),
+      ],
+    } as unknown as ScanResult;
+    const manifest = toManifest(flood, "0.1.0");
+    expect(manifest.findings).toHaveLength(MANIFEST_LIMITS.findings);
+    const gpt4 = manifest.findings.find((f) => f.identifier === "gpt-4");
+    expect(gpt4?.count ?? MANIFEST_LIMITS.count).toBe(MANIFEST_LIMITS.count);
   });
 });
 

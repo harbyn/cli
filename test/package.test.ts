@@ -1,5 +1,13 @@
 import { spawnSync } from "node:child_process";
-import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import {
+  cpSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -342,8 +350,10 @@ describe("GitHub Action", () => {
       "src/ai.ts": 'const x = 1;\nclient.create({ model: "acme-1" });\n',
     },
     extraEnv: Record<string, string> = {},
+    prepare?: (workspace: string) => void,
   ) => {
     const workspace = write(mkdtempSync(join(tmpdir(), "ws-")), files ?? {});
+    prepare?.(workspace);
     const runnerTemp = mkdtempSync(join(tmpdir(), "runner-"));
     const outputFile = join(runnerTemp, "output");
     const summaryFile = join(runnerTemp, "summary");
@@ -410,6 +420,36 @@ describe("GitHub Action", () => {
     expect(r.stdout).toMatch(
       /^::error title=harbyn::the path input must stay inside the repository workspace$/m,
     );
+  });
+
+  it("abuse: a scanned directory that is a symlink out of the workspace is refused", () => {
+    const outsideDir = write(mkdtempSync(join(tmpdir(), "outside-")), {
+      "leak.ts": 'model: "acme-1"\n',
+    });
+    const r = runAction(
+      { ...withFeed(), path: "linked" },
+      { "src/ai.ts": "export {};\n" },
+      {},
+      (ws) => symlinkSync(outsideDir, join(ws, "linked"), "junction"),
+    );
+    expect(r.status).toBe(1);
+    expect(r.stdout).toMatch(
+      /^::error title=harbyn::the path input must stay inside the repository workspace$/m,
+    );
+    expect(r.stdout).not.toMatch(/leak\.ts/);
+  });
+
+  it("an upload that fails never hides findings: fail-on still fails the step", () => {
+    const r = runAction({
+      ...withFeed(),
+      "fail-on": "findings",
+      upload: "true",
+      connection: "11111111-2222-4333-8444-555555555555",
+    });
+    expect(r.status).toBe(1);
+    expect(r.stdout).toMatch(/^::warning title=harbyn::upload: the job has no OIDC token/m);
+    expect(r.outputs).toMatch(/^findings=1$/m);
+    expect(r.summary).toContain("The upload below is everything that leaves the runner.");
   });
 
   it("rejects unknown option values", () => {

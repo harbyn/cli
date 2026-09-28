@@ -1,4 +1,4 @@
-import { type RepoManifest, repoManifest } from "./schema/index.ts";
+import { MANIFEST_LIMITS, type RepoManifest, repoManifest } from "./schema/index.ts";
 import type { ScanResult } from "./report.ts";
 import { safe } from "./report.ts";
 
@@ -26,16 +26,20 @@ export const toManifest = (result: ScanResult, scannerVersion: string): RepoMani
         count: 1,
       });
   }
+  const findings = [...groups.values()]
+    .sort(
+      (a, b) =>
+        a.eventId.localeCompare(b.eventId) ||
+        (a.identifier ?? "").localeCompare(b.identifier ?? ""),
+    )
+    .slice(0, MANIFEST_LIMITS.findings)
+    .map((g) => ({ ...g, count: Math.min(g.count, MANIFEST_LIMITS.count) }));
   return repoManifest.parse({
     version: 1,
     scanner: scannerVersion,
     filesScanned: result.stats.scanned,
-    vendors: [...vendors].sort(),
-    findings: [...groups.values()].sort(
-      (a, b) =>
-        a.eventId.localeCompare(b.eventId) ||
-        (a.identifier ?? "").localeCompare(b.identifier ?? ""),
-    ),
+    vendors: [...vendors].sort().slice(0, MANIFEST_LIMITS.vendors),
+    findings,
   });
 };
 

@@ -3,6 +3,7 @@ import type { Finding } from "./match.ts";
 import { actionable, deadlineLabel, type ScanResult, safe } from "./report.ts";
 
 export const MAX_ANNOTATIONS_PER_LEVEL = 10;
+export const MAX_SUMMARY_ROWS = 500;
 const MAX_TITLE = 200;
 const MAX_MESSAGE = 900;
 
@@ -69,6 +70,7 @@ export const toStepSummary = (
   today: string,
   productName: string,
   pathPrefix = "",
+  uploading = false,
 ): string => {
   const findings = [...actionable(result)].sort(byDeadline);
   const out = [`## ${mdText(productName)} scan`, ""];
@@ -81,20 +83,26 @@ export const toStepSummary = (
       "",
     );
     out.push("| When | Change | Where | Use instead | |", "| --- | --- | --- | --- | --- |");
-    for (const f of findings) {
+    for (const f of findings.slice(0, MAX_SUMMARY_ROWS)) {
       const replacement = replacementOf(f);
       out.push(
         `| ${mdText(deadlineLabel(f.event, today))} | ${mdText(f.event.title)} | ${mdText(`${repoPath(f.path, pathPrefix)}:${f.line}`)} ${mdText(f.token)} | ${replacement.length > 0 ? mdText(replacement.join(", ")) : "-"} | ${mdLink(f.event.sources[0]?.url)} |`,
       );
     }
     out.push("");
+    if (findings.length > MAX_SUMMARY_ROWS) {
+      out.push(
+        `The table shows the first ${MAX_SUMMARY_ROWS}, by deadline. The JSON report (the \`report\` output) has all of them.`,
+        "",
+      );
+    }
     const perLevel = { error: errors, warning: findings.length - errors };
     if (
       perLevel.error > MAX_ANNOTATIONS_PER_LEVEL ||
       perLevel.warning > MAX_ANNOTATIONS_PER_LEVEL
     ) {
       out.push(
-        `GitHub shows at most ${MAX_ANNOTATIONS_PER_LEVEL} annotations of each level on the lines; this table has all of them.`,
+        `GitHub shows at most ${MAX_ANNOTATIONS_PER_LEVEL} annotations of each level on the lines; the table lists the rest.`,
         "",
       );
     }
@@ -105,8 +113,11 @@ export const toStepSummary = (
       `${low} more in tests, docs and model catalogs (low confidence) are not annotated.`,
       "",
     );
+  const scanned = `${result.stats.scanned} ${result.stats.scanned === 1 ? "file" : "files"} scanned on the runner.`;
   out.push(
-    `${result.stats.scanned} ${result.stats.scanned === 1 ? "file" : "files"} scanned on the runner. Nothing about this repository was sent anywhere.`,
+    uploading
+      ? `${scanned} The upload below is everything that leaves the runner.`
+      : `${scanned} Nothing about this repository was sent anywhere.`,
     "",
   );
   return out.join("\n");

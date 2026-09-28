@@ -1,4 +1,4 @@
-import { appendFileSync, writeFileSync } from "node:fs";
+import { appendFileSync, realpathSync, writeFileSync } from "node:fs";
 import { isAbsolute, join, relative, resolve, sep } from "node:path";
 import { FeedVerificationError } from "./feed/index.ts";
 import { config } from "zod";
@@ -30,9 +30,17 @@ const fail = (message: string): never => {
 
 const workspace = resolve(process.env.GITHUB_WORKSPACE ?? process.cwd());
 const target = resolve(workspace, input("path") || ".");
+const outside = (from: string, to: string): boolean => {
+  const rel = relative(from, to);
+  return isAbsolute(rel) || rel.split(sep).includes("..");
+};
 const inside = relative(workspace, target);
-if (isAbsolute(inside) || inside.split(sep).includes("..")) {
-  fail("the path input must stay inside the repository workspace");
+if (outside(workspace, target)) fail("the path input must stay inside the repository workspace");
+try {
+  if (outside(realpathSync(workspace), realpathSync(target)))
+    fail("the path input must stay inside the repository workspace");
+} catch {
+  fail("the path input does not exist in the repository");
 }
 const pathPrefix = inside.split(sep).join("/");
 const failOn = input("fail-on") || "none";
@@ -57,31 +65,46 @@ const writeOutput = (name: string, value: string): void => {
   if (process.env.GITHUB_OUTPUT) appendFileSync(process.env.GITHUB_OUTPUT, `${name}=${value}\n`);
 };
 
-try {
-  const feed = await getFeed({
-    now,
-    ...(feedDir ? { feedDir: resolve(workspace, feedDir) } : {}),
-    onWarning: (message) => console.log(workflowCommand("warning", CLI_NAME, message)),
-  });
-  const result = scan(target, feed, { ignore: lines(input("ignore")) });
+const feed = await (async () => {
+  try {
+    return await getFeed({
+      now,
+      ...(feedDir ? { feedDir: resolve(workspace, feedDir) } : {}),
+      onWarning: (message) => console.log(workflowCommand("warning", CLI_NAME, message)),
+    });
+  } catch (error) {
+    const reason =
+      error instanceof FeedVerificationError ? error.message : (error as Error).message;
+    const message = `no scan: the change feed could not be verified (${reason})`;
+    writeOutput("findings", "");
+    if (onFeedError === "fail") fail(message);
+    console.log(workflowCommand("warning", CLI_NAME, message));
+    process.exit(0);
+  }
+})();
 
-  for (const annotation of toAnnotations(result, today, pathPrefix)) console.log(annotation);
-  if (process.env.GITHUB_STEP_SUMMARY)
-    appendFileSync(
-      process.env.GITHUB_STEP_SUMMARY,
-      toStepSummary(result, today, CLI_NAME, pathPrefix),
-    );
+const result = scan(target, feed, { ignore: lines(input("ignore")) });
 
-  const reportPath = join(process.env.RUNNER_TEMP ?? workspace, `${CLI_NAME}-report.json`);
-  writeFileSync(reportPath, JSON.stringify(toJson(result), null, 2));
-  const count = actionable(result).length;
-  writeOutput("findings", String(count));
-  writeOutput("report", reportPath);
-  console.log(
-    `${count} affected ${count === 1 ? "line" : "lines"}, ${result.stats.scanned} ${result.stats.scanned === 1 ? "file" : "files"} scanned.`,
+for (const annotation of toAnnotations(result, today, pathPrefix)) console.log(annotation);
+if (process.env.GITHUB_STEP_SUMMARY) {
+  appendFileSync(
+    process.env.GITHUB_STEP_SUMMARY,
+    toStepSummary(result, today, CLI_NAME, pathPrefix, upload === "true"),
   );
+}
 
-  if (upload === "true") {
+const reportPath = join(process.env.RUNNER_TEMP ?? workspace, `${CLI_NAME}-report.json`);
+writeFileSync(reportPath, JSON.stringify(toJson(result), null, 2));
+const count = actionable(result).length;
+writeOutput("findings", String(count));
+writeOutput("report", reportPath);
+console.log(
+  `${count} affected ${count === 1 ? "line" : "lines"}, ${result.stats.scanned} ${result.stats.scanned === 1 ? "file" : "files"} scanned.`,
+);
+
+if (upload === "true") {
+  let outcome: { ok: boolean; message: string };
+  try {
     const body = uploadBody(connection, toManifest(result, CLI_VERSION));
     if (process.env.GITHUB_STEP_SUMMARY) {
       const pretty = JSON.stringify(JSON.parse(body), null, 2);
@@ -98,29 +121,19 @@ ${pretty}
 `,
       );
     }
-    let outcome: { ok: boolean; message: string };
-    try {
-      outcome = await uploadManifest(body, await requestOidcToken(process.env, fetch), fetch);
-    } catch (error) {
-      outcome = { ok: false, message: (error as Error).message };
-    }
-    if (outcome.ok) console.log(`${CLI_NAME}: ${outcome.message}`);
-    else if (onUploadError === "fail") fail(`upload: ${outcome.message}`);
-    else
-      console.log(
-        workflowCommand(
-          "warning",
-          CLI_NAME,
-          `upload: ${outcome.message}. The scan above is complete; only the dashboard misses this run.`,
-        ),
-      );
+    outcome = await uploadManifest(body, await requestOidcToken(process.env, fetch), fetch);
+  } catch (error) {
+    outcome = { ok: false, message: (error as Error).message };
   }
-  process.exit(failOn === "findings" && count > 0 ? 1 : 0);
-} catch (error) {
-  const reason = error instanceof FeedVerificationError ? error.message : (error as Error).message;
-  const message = `no scan: the change feed could not be verified (${reason})`;
-  writeOutput("findings", "");
-  if (onFeedError === "fail") fail(message);
-  console.log(workflowCommand("warning", CLI_NAME, message));
-  process.exit(0);
+  if (outcome.ok) console.log(`${CLI_NAME}: ${outcome.message}`);
+  else if (onUploadError === "fail") fail(`upload: ${outcome.message}`);
+  else
+    console.log(
+      workflowCommand(
+        "warning",
+        CLI_NAME,
+        `upload: ${outcome.message}. The scan above is complete; only the dashboard misses this run.`,
+      ),
+    );
 }
+process.exit(failOn === "findings" && count > 0 ? 1 : 0);
