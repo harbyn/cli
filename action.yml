@@ -1,0 +1,50 @@
+name: Harbyn scan
+description: Marks the lines that a vendor's upcoming change will break (retired models, API versions, endpoints). Read-only; by default nothing leaves the runner.
+author: Harbyn
+branding:
+  icon: alert-triangle
+  color: blue
+
+inputs:
+  path:
+    description: Directory to scan, relative to the repository root.
+    required: false
+    default: "."
+  ignore:
+    description: Extra ignore patterns (.gitignore syntax), one per line. .gitignore and .harbynignore are always honoured.
+    required: false
+    default: ""
+  fail-on:
+    description: "'none' (default) only annotates; 'findings' also fails the step when code is affected."
+    required: false
+    default: none
+  on-feed-error:
+    description: "When the change feed cannot be verified nothing is reported. 'warn' (default) leaves the step green with a warning; 'fail' fails it."
+    required: false
+    default: warn
+  upload:
+    description: "'false' (default) keeps everything on the runner. 'true' also sends the scan to your Harbyn dashboard: feed terms and counts only, no paths, lines or code, printed in the job summary first. Needs `permissions: id-token: write` and `connection`."
+    required: false
+    default: "false"
+  connection:
+    description: The connection id shown in your Harbyn dashboard (Repositories) for this repository. Used only with upload.
+    required: false
+    default: ""
+  on-upload-error:
+    description: "When the upload fails the scan still completes. 'warn' (default) leaves the step green with a warning; 'fail' fails it."
+    required: false
+    default: warn
+  feed-dir:
+    description: Development only. Reads an unsigned feed from a directory in the repository instead of downloading the signed feed.
+    required: false
+    default: ""
+
+outputs:
+  findings:
+    description: Number of affected lines in code (empty when the feed could not be verified).
+  report:
+    description: Path of the full JSON report on the runner.
+
+runs:
+  using: node24
+  main: dist/action/harbyn-action.mjs

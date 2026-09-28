@@ -1,0 +1,43 @@
+{
+  "schemaVersion": 1,
+  "id": "acme/2026-01-01-acme-1",
+  "vendor": "acme",
+  "kind": "retirement",
+  "status": "announced",
+  "severity": "high",
+  "title": "Fixture: acme-1 retired",
+  "summary": "acme-1 stops responding.",
+  "announcedAt": "2026-01-01",
+  "addedAt": "2026-01-01",
+  "effectiveAt": "2099-01-01",
+  "affects": [
+    {
+      "type": "model-id",
+      "values": [
+        "acme-1"
+      ]
+    }
+  ],
+  "replacement": {
+    "targets": [
+      {
+        "type": "model-id",
+        "values": [
+          "acme-2"
+        ]
+      }
+    ]
+  },
+  "sources": [
+    {
+      "url": "https://acme.example/changelog",
+      "kind": "changelog",
+      "fetchedAt": "2026-01-01T00:00:00Z",
+      "sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+    }
+  ],
+  "review": {
+    "state": "automated",
+    "extractedBy": "deterministic"
+  }
+}

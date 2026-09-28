@@ -1,0 +1,31 @@
+{
+  "schemaVersion": 1,
+  "id": "acme",
+  "name": "Acme (fixture)",
+  "homepage": "https://acme.example/",
+  "category": "ai",
+  "allowedDomains": [
+    "acme.example"
+  ],
+  "sources": [
+    {
+      "url": "https://acme.example/changelog",
+      "format": "html",
+      "purpose": "changelog"
+    }
+  ],
+  "detection": {
+    "packages": [
+      {
+        "ecosystem": "npm",
+        "name": "acme-sdk"
+      }
+    ],
+    "apiHosts": [
+      "api.acme.example"
+    ],
+    "modelIdPrefixes": [
+      "acme-"
+    ]
+  }
+}
