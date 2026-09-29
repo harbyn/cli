@@ -1,4 +1,5 @@
 import { type ChangeEvent, deadlineOf } from "./schema/index.ts";
+import type { FixPlan, Unfixable } from "./fix.ts";
 import type { Inventory } from "./inventory.ts";
 import type { Finding, VendorUsage } from "./match.ts";
 import type { WalkStats } from "./walk.ts";
@@ -72,6 +73,47 @@ export const toJson = (result: ScanResult) => ({
   })),
   dependencies: result.inventory?.dependencies ?? [],
 });
+
+export const toFixText = (
+  plans: FixPlan[],
+  unfixable: Unfixable[],
+  written?: { written: string[]; conflicts: string[] },
+): string => {
+  const out: string[] = [];
+  for (const plan of plans) {
+    out.push(
+      `${plan.event.title}`,
+      `  replace with: ${safe(plan.to)}   source: ${plan.event.sources[0]?.url ?? "-"}`,
+    );
+    for (const e of plan.edits)
+      out.push(
+        `  ${safe(e.path)}:${e.line}`,
+        `  - ${safe(e.before.trim())}`,
+        `  + ${safe(e.after.trim())}`,
+      );
+    for (const s of plan.skipped)
+      out.push(`  not changed: ${safe(s.path)}:${s.line} (${s.reason})`);
+    out.push("");
+  }
+  for (const u of unfixable)
+    out.push(`Not fixed automatically: ${u.event.title}`, `  ${u.reason}`, "");
+  const edits = plans.reduce((n, p) => n + p.edits.length, 0);
+  if (plans.length === 0 && unfixable.length === 0)
+    out.push("Nothing to fix: no retired model or API version with a named replacement was found.");
+  else if (written) {
+    out.push(
+      `Changed ${written.written.length} ${written.written.length === 1 ? "file" : "files"}. Review with git diff.`,
+    );
+    if (written.conflicts.length > 0)
+      out.push(
+        `Left alone (changed since the scan, or not a regular file): ${written.conflicts.map(safe).join(", ")}`,
+      );
+  } else if (edits > 0)
+    out.push(
+      `${edits} ${edits === 1 ? "line" : "lines"} can be fixed. Run again with --write to apply them, then review with git diff.`,
+    );
+  return out.join("\n");
+};
 
 export const toDependencyText = (result: ScanResult): string => {
   const inv = result.inventory;

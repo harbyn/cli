@@ -321,6 +321,7 @@ describe.each(["CLI", "action"])("%s bundle contents", (which) => {
             "https://api.harbyn.com/ingest/manifest",
             "https://api.harbyn.com",
             "https://feed.harbyn.com/v1/feed.json",
+            "https://api.github.com",
           ];
     expect(urls.sort()).toEqual(expected.sort());
   });

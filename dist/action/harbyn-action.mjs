@@ -5,8 +5,8 @@ var __export = (target3, all) => {
 };
 
 // src/action.ts
-import { appendFileSync, realpathSync, writeFileSync as writeFileSync2 } from "node:fs";
-import { isAbsolute, join as join4, relative as relative2, resolve as resolve2, sep as sep2 } from "node:path";
+import { appendFileSync, realpathSync as realpathSync2, writeFileSync as writeFileSync3 } from "node:fs";
+import { isAbsolute as isAbsolute2, join as join5, relative as relative3, resolve as resolve3, sep as sep3 } from "node:path";
 
 // src/feed/load.ts
 import { lstatSync, readdirSync, readFileSync } from "node:fs";
@@ -5038,7 +5038,7 @@ var recursive = /* @__PURE__ */ new WeakMap();
 var NONE = 0;
 var ASSUMED = 1;
 var PROVEN = 2;
-function isRecursive(inst, stack, resolve3) {
+function isRecursive(inst, stack, resolve4) {
   const cached2 = recursive.get(inst);
   if (cached2 !== void 0)
     return cached2 ? PROVEN : NONE;
@@ -5048,7 +5048,7 @@ function isRecursive(inst, stack, resolve3) {
   let result2 = NONE;
   const check2 = (child) => {
     if (result2 !== PROVEN && child?._zod) {
-      const answer = isRecursive(child, stack, resolve3);
+      const answer = isRecursive(child, stack, resolve4);
       if (answer > result2)
         result2 = answer;
     }
@@ -5059,7 +5059,7 @@ function isRecursive(inst, stack, resolve3) {
       const desc = Object.getOwnPropertyDescriptor(sh, key);
       if (spread && !desc.enumerable)
         continue;
-      const child = desc.get ? ASSUMED : desc.value?._zod ? isRecursive(desc.value, stack, resolve3) : NONE;
+      const child = desc.get ? ASSUMED : desc.value?._zod ? isRecursive(desc.value, stack, resolve4) : NONE;
       if (child > answer)
         answer = child;
     }
@@ -5123,7 +5123,7 @@ function isRecursive(inst, stack, resolve3) {
       break;
     // `$ZodLazy` caches its inner on the def, so a resolved edge is followed exactly
     case "lazy": {
-      const inner = def._cachedInner ?? (resolve3 ? inst._zod.innerType : void 0);
+      const inner = def._cachedInner ?? (resolve4 ? inst._zod.innerType : void 0);
       merge2(inner ? isRecursive(inner, stack, false) : ASSUMED);
       break;
     }
@@ -12410,12 +12410,16 @@ var changeKind = external_exports.enum([
   "notice"
 ]);
 var severity = external_exports.enum(["critical", "high", "medium", "low", "info"]);
+var identifier = literalToken.refine(
+  (t) => !/:\/\/|\/\/|\.\.|^\/|\/$/.test(t),
+  "must not look like a URL or a path"
+);
 var target = external_exports.discriminatedUnion("type", [
-  external_exports.strictObject({ type: external_exports.literal("model-id"), values: external_exports.array(literalToken).min(1).max(64) }),
+  external_exports.strictObject({ type: external_exports.literal("model-id"), values: external_exports.array(identifier).min(1).max(64) }),
   external_exports.strictObject({
     type: external_exports.literal("api-version"),
     header: literalToken.optional(),
-    values: external_exports.array(literalToken).min(1).max(64)
+    values: external_exports.array(identifier).min(1).max(64)
   }),
   external_exports.strictObject({
     type: external_exports.literal("endpoint"),
@@ -12765,7 +12769,7 @@ import { join as join2 } from "node:path";
 
 // src/product.ts
 var CLI_NAME = "harbyn";
-var CLI_VERSION = true ? "0.2.0" : "0.0.0-dev";
+var CLI_VERSION = true ? "0.3.0" : "0.0.0-dev";
 
 // src/remote-feed.ts
 var PRODUCTION_KEYS = {
@@ -12975,7 +12979,7 @@ var replacementOf = (finding) => finding.event.replacement?.targets.flatMap((t) 
 var repoPath = (path, prefix) => prefix ? `${prefix}/${path}` : path;
 var byDeadline = (a, b) => (deadlineOf(a.event)?.date ?? "9999").localeCompare(deadlineOf(b.event)?.date ?? "9999") || a.path.localeCompare(b.path) || a.line - b.line;
 var toAnnotations = (result2, today2, pathPrefix2 = "") => {
-  const shown = { error: 0, warning: 0 };
+  const shown = { error: 0, warning: 0, notice: 0 };
   const lines2 = [];
   for (const finding of [...actionable(result2)].sort(byDeadline)) {
     const level = levelOf(finding, today2);
@@ -13751,8 +13755,8 @@ var IgnoreRules = class {
     for (const rule of this.rules) {
       if (rule.dirOnly && !isDirectory) continue;
       if (rule.base !== "" && !path.startsWith(`${rule.base}/`)) continue;
-      const relative3 = (rule.base === "" ? path : path.slice(rule.base.length + 1)).split("/");
-      const hit = rule.anchored ? matchSegments(rule.segments, relative3) : matchSegments(["**", ...rule.segments], relative3);
+      const relative4 = (rule.base === "" ? path : path.slice(rule.base.length + 1)).split("/");
+      const hit = rule.anchored ? matchSegments(rule.segments, relative4) : matchSegments(["**", ...rule.segments], relative4);
       if (hit) ignored = !rule.negated;
     }
     return ignored;
@@ -13886,6 +13890,302 @@ function* walk(root, stats, options = {}) {
   }
 }
 
+// src/fix.ts
+import { lstatSync as lstatSync3, readFileSync as readFileSync4, realpathSync, writeFileSync as writeFileSync2 } from "node:fs";
+import { isAbsolute, join as join4, relative as relative2, resolve as resolve2, sep as sep2 } from "node:path";
+var MAX_EDITS_PER_EVENT = 200;
+var SENSITIVE_WORDS = /* @__PURE__ */ new Set([
+  "payment",
+  "payments",
+  "pay",
+  "billing",
+  "bill",
+  "checkout",
+  "invoice",
+  "invoices",
+  "charge",
+  "charges",
+  "subscription",
+  "subscriptions",
+  "stripe",
+  "braintree",
+  "adyen",
+  "paypal",
+  "mercadopago",
+  "pagarme",
+  "pagseguro",
+  "iugu",
+  "asaas",
+  "cielo",
+  "pix",
+  "boleto",
+  "auth",
+  "authn",
+  "authz",
+  "authentication",
+  "authorization",
+  "oauth",
+  "oauth2",
+  "openid",
+  "oidc",
+  "saml",
+  "sso",
+  "login",
+  "logout",
+  "signin",
+  "signup",
+  "session",
+  "sessions",
+  "password",
+  "passwords",
+  "passwd",
+  "credential",
+  "credentials",
+  "mfa",
+  "totp",
+  "otp",
+  "crypto",
+  "cryptography",
+  "cipher",
+  "encrypt",
+  "encryption",
+  "decrypt",
+  "security",
+  "secret",
+  "secrets",
+  "key",
+  "keys",
+  "jwt",
+  "token",
+  "tokens"
+]);
+var SENSITIVE_CONTENT = new RegExp(
+  [
+    "bcrypt",
+    "argon2",
+    "scrypt",
+    "pbkdf2",
+    "jsonwebtoken",
+    "jose",
+    "passport",
+    "next-auth",
+    "@auth/",
+    "auth0",
+    "@clerk/",
+    "firebase/auth",
+    "supabase\\.auth",
+    "crypto\\.subtle",
+    "createCipheriv",
+    "createDecipheriv",
+    "createSign",
+    "createHmac",
+    "createHash",
+    "randomBytes",
+    "webcrypto",
+    "node:crypto",
+    "require\\(.crypto.\\)",
+    "cryptography\\.hazmat",
+    "hashlib",
+    "hmac\\.new",
+    "jwt\\.encode",
+    "javax\\.crypto",
+    "MessageDigest",
+    '"crypto/',
+    "golang\\.org/x/crypto",
+    "stripe",
+    "braintree",
+    "adyen",
+    "paypal",
+    "mercadopago",
+    "pagarme",
+    "pagseguro",
+    "paymentIntents",
+    "checkout\\.sessions"
+  ].join("|"),
+  "i"
+);
+var CI_PATH = /^(?:\.github\/|\.gitlab-ci\.ya?ml$|\.circleci\/|\.buildkite\/|Jenkinsfile|azure-pipelines\.ya?ml$|bitbucket-pipelines\.ya?ml$|\.drone\.ya?ml$)/;
+var pathWords = (path) => path.replace(/([a-z0-9])([A-Z])/g, "$1 $2").replace(/([A-Z]+)([A-Z][a-z])/g, "$1 $2").toLowerCase().split(/[^a-z0-9]+/).filter(Boolean);
+var isSensitive = (path, text) => CI_PATH.test(path) || pathWords(path).some((w) => SENSITIVE_WORDS.has(w)) || SENSITIVE_CONTENT.test(text);
+var splitLines = (text) => {
+  const parts = text.split(/(\r\n|\n)/);
+  const lines2 = [];
+  const endings = [];
+  for (let i = 0; i < parts.length; i += 2) {
+    lines2.push(parts[i]);
+    endings.push(parts[i + 1] ?? "");
+  }
+  return { lines: lines2, endings };
+};
+var joinLines = ({ lines: lines2, endings }) => lines2.map((l, i) => l + (endings[i] ?? "")).join("");
+var utf8Text = (bytes) => {
+  const text = bytes.toString("utf8");
+  return Buffer.from(text, "utf8").equals(bytes) ? text : void 0;
+};
+var safeToken = (token) => literalToken.safeParse(token).success && !/:\/\/|\/\/|\.\.|^\/|\/$/.test(token);
+var reviewed = (event) => event.review.state === "human-reviewed" || event.review.extractedBy === "deterministic";
+var valuesOf = (event, type, side) => {
+  const targets = side === "affects" ? event.affects : event.replacement?.targets ?? [];
+  return [
+    ...new Set(
+      targets.filter((t) => t.type === type).flatMap((t) => "values" in t ? t.values : [])
+    )
+  ];
+};
+var QUOTES = ['"', "'", "`"];
+var commentStart = (line) => {
+  let quote = "";
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i];
+    if (quote) {
+      if (ch === "\\") i++;
+      else if (ch === quote) quote = "";
+      continue;
+    }
+    if (QUOTES.includes(ch)) quote = ch;
+    else if (ch === "/" && (line[i + 1] === "/" || line[i + 1] === "*")) return i;
+    else if (ch === "#" && (i === 0 || /\s/.test(line[i - 1]))) return i;
+  }
+  return line.length;
+};
+var replaceLiteral = (full, from, to) => {
+  const trimmed = full.trimStart();
+  if (/^(?:\/\/|#|\*|\/\*|<!--|--)/.test(trimmed)) return void 0;
+  const cut = commentStart(full);
+  const line = full.slice(0, cut);
+  const tail = full.slice(cut);
+  let out = "";
+  let changed = false;
+  let i = 0;
+  while (i < line.length) {
+    const at = line.indexOf(from, i);
+    if (at === -1) break;
+    const open2 = line[at - 1] ?? "";
+    const close = line[at + from.length] ?? "";
+    if (QUOTES.includes(open2) && close === open2) {
+      out += line.slice(i, at) + to;
+      changed = true;
+    } else {
+      out += line.slice(i, at + from.length);
+    }
+    i = at + from.length;
+  }
+  if (!changed) return void 0;
+  return out + line.slice(i) + tail;
+};
+var planFixes = (result2, options) => {
+  const read = options.read ?? ((path) => {
+    try {
+      const full = join4(options.root, path);
+      return lstatSync3(full).isFile() ? utf8Text(readFileSync4(full)) : void 0;
+    } catch {
+      return void 0;
+    }
+  });
+  const byEvent = /* @__PURE__ */ new Map();
+  for (const f of result2.findings) {
+    if (f.via !== "model-id" && f.via !== "api-version") continue;
+    byEvent.set(f.event.id, [...byEvent.get(f.event.id) ?? [], f]);
+  }
+  const plans = [];
+  const unfixable = [];
+  for (const findings of byEvent.values()) {
+    const event = findings[0].event;
+    const type = findings[0].via;
+    if (!reviewed(event)) {
+      unfixable.push({
+        event,
+        reason: "not reviewed yet: only reviewed events are fixed automatically"
+      });
+      continue;
+    }
+    if (options.vendors.get(event.vendor)?.alertOnly) {
+      unfixable.push({
+        event,
+        reason: "alert-only vendor (payments, auth): Harbyn does not edit this code"
+      });
+      continue;
+    }
+    const replacements = valuesOf(event, type, "replacement");
+    if (replacements.length !== 1) {
+      unfixable.push({
+        event,
+        reason: replacements.length === 0 ? "the vendor names no replacement" : "the vendor names several replacements: a person has to choose"
+      });
+      continue;
+    }
+    const to = replacements[0];
+    const affected = new Set(valuesOf(event, type, "affects"));
+    if (!safeToken(to)) {
+      unfixable.push({ event, reason: "the replacement is not a plain identifier" });
+      continue;
+    }
+    const plan = { event, from: "", to, edits: [], skipped: [] };
+    const fileText = /* @__PURE__ */ new Map();
+    for (const f of findings) {
+      if (f.context !== "code") {
+        plan.skipped.push({
+          path: f.path,
+          line: f.line,
+          reason: f.context === "test" ? "test file" : f.context === "docs" ? "documentation" : "model catalog"
+        });
+        continue;
+      }
+      if (!affected.has(f.token) || f.token === to || !safeToken(f.token)) {
+        plan.skipped.push({
+          path: f.path,
+          line: f.line,
+          reason: "matched a variant, not the exact retired identifier"
+        });
+        continue;
+      }
+      if (!fileText.has(f.path)) fileText.set(f.path, read(f.path));
+      const text = fileText.get(f.path);
+      if (text === void 0) {
+        plan.skipped.push({
+          path: f.path,
+          line: f.line,
+          reason: "file could not be read, or is not UTF-8"
+        });
+        continue;
+      }
+      if (isSensitive(f.path, text)) {
+        plan.skipped.push({
+          path: f.path,
+          line: f.line,
+          reason: "payments, authentication, cryptography or CI code: alert only"
+        });
+        continue;
+      }
+      const before = splitLines(text).lines[f.line - 1];
+      const after = before === void 0 ? void 0 : replaceLiteral(before, f.token, to);
+      if (before === void 0 || after === void 0) {
+        plan.skipped.push({
+          path: f.path,
+          line: f.line,
+          reason: "not a plain string literal (a comment, or part of a longer value)"
+        });
+        continue;
+      }
+      if (plan.edits.some((e) => e.path === f.path && e.line === f.line)) continue;
+      if (plan.edits.length >= MAX_EDITS_PER_EVENT) {
+        plan.skipped.push({
+          path: f.path,
+          line: f.line,
+          reason: "too many places in one change: fix the rest by hand"
+        });
+        continue;
+      }
+      plan.from = plan.from || f.token;
+      plan.edits.push({ path: f.path, line: f.line, before, after });
+    }
+    if (plan.edits.length === 0)
+      unfixable.push({ event, reason: plan.skipped[0]?.reason ?? "nothing to change" });
+    else plans.push(plan);
+  }
+  return { plans, unfixable };
+};
+
 // src/index.ts
 var scan = (root, feed2, options = {}) => {
   const stats = newStats();
@@ -13908,6 +14208,206 @@ var scan = (root, feed2, options = {}) => {
   };
 };
 
+// src/pulls.ts
+var GITHUB_API = "https://api.github.com";
+var MAX_PULLS = 3;
+var MAX_BODY = 6e4;
+var REPO = /^[A-Za-z0-9-]{1,39}\/[A-Za-z0-9._-]{1,100}$/;
+var SHA = /^[0-9a-f]{40}$/;
+var SOURCE = /^https:\/\/[A-Za-z0-9.-]+(?:\/[A-Za-z0-9._~%/-]*)?$/;
+var branchFor = (eventId2) => `harbyn/${eventId2.replace("/", "-")}`.replace(/[^A-Za-z0-9._/-]/g, "-").slice(0, 200);
+var fence = (code) => {
+  const longest = Math.max(2, ...[...code.matchAll(/`+/g)].map((m) => m[0].length));
+  const ticks = "`".repeat(longest + 1);
+  return `${ticks}
+${code}
+${ticks}`;
+};
+var prText = (s) => mdText(s).replaceAll("@", "&#64;").replaceAll("://", ":&#47;&#47;");
+var pullRequestFor = (plan, vendors) => {
+  const e = plan.event;
+  const vendor2 = vendors.get(e.vendor)?.name ?? e.vendor;
+  const deadline = deadlineOf(e);
+  const title = `Harbyn: replace ${plan.from} with ${plan.to} (${vendor2.replaceAll("@", "")}${deadline ? `, ${deadline.date}` : ""})`.slice(
+    0,
+    250
+  );
+  const source2 = e.sources[0]?.url ?? "";
+  const lines2 = [
+    `${prText(vendor2)} announced: **${prText(e.title)}**${deadline ? ` (effective ${prText(deadline.date)})` : ""}.`,
+    "",
+    prText(e.summary),
+    "",
+    `This pull request replaces ${plan.edits.length === 1 ? "the one place" : `the ${plan.edits.length} places`} your code uses the retired identifier with the one ${prText(vendor2)} names as its replacement. Nothing else changes.`,
+    "",
+    "### Changes",
+    "",
+    ...plan.edits.flatMap((edit) => [
+      `\`${mdText(edit.path)}:${edit.line}\``,
+      "",
+      fence(`- ${edit.before.trim()}
++ ${edit.after.trim()}`),
+      ""
+    ])
+  ];
+  if (plan.skipped.length > 0) {
+    lines2.push(
+      "### Not changed",
+      "",
+      ...plan.skipped.map((s) => `- \`${mdText(s.path)}:${s.line}\`: ${mdText(s.reason)}`),
+      ""
+    );
+  }
+  lines2.push(
+    "### Before merging",
+    "",
+    `- A newer model or API version can behave differently. Run your tests and check the vendor's notes${SOURCE.test(source2) ? `: ${source2}` : "."}`,
+    "- Pull requests opened with the default workflow token do not start other workflows. Push to this branch, or close and reopen this pull request, to run your CI on it.",
+    "- To decline, close this pull request: Harbyn will not open it again.",
+    "",
+    `<sub>Opened by the Harbyn GitHub Action from change event \`${mdText(e.id)}\` (${e.review.state === "human-reviewed" ? "reviewed by a person" : "from the vendor's structured data"}). Harbyn never merges, and never writes to your default branch.</sub>`
+  );
+  const body = lines2.join("\n");
+  return {
+    title,
+    body: body.length > MAX_BODY ? `${body.slice(0, MAX_BODY - 40)}
+
+(truncated: see the job summary)` : body
+  };
+};
+var editedText = (text, plan, path) => {
+  const split = splitLines(text);
+  for (const edit of plan.edits.filter((e) => e.path === path)) {
+    if (split.lines[edit.line - 1] !== edit.before) return void 0;
+    split.lines[edit.line - 1] = edit.after;
+  }
+  return joinLines(split);
+};
+var openPullRequests = async (plans, ctx) => {
+  if (!REPO.test(ctx.repository) || !SHA.test(ctx.sha))
+    throw new Error("unexpected GITHUB_REPOSITORY or GITHUB_SHA");
+  const api = async (method, path, body) => {
+    const res = await ctx.fetch(`${GITHUB_API}/repos/${ctx.repository}${path}`, {
+      method,
+      headers: {
+        authorization: `Bearer ${ctx.token}`,
+        accept: "application/vnd.github+json",
+        "x-github-api-version": "2022-11-28",
+        "user-agent": "harbyn-action",
+        ...body === void 0 ? {} : { "content-type": "application/json" }
+      },
+      ...body === void 0 ? {} : { body: JSON.stringify(body) },
+      redirect: "error",
+      signal: AbortSignal.timeout(2e4)
+    });
+    let json2 = null;
+    try {
+      json2 = await res.json();
+    } catch {
+      json2 = null;
+    }
+    return { status: res.status, json: json2 };
+  };
+  const contentsPath = (path) => `/contents/${path.split("/").map(encodeURIComponent).join("/")}`;
+  const repo = await api("GET", "");
+  const defaultBranch = repo.json?.default_branch;
+  if (repo.status !== 200 || typeof defaultBranch !== "string")
+    throw new Error(`could not read the repository (HTTP ${repo.status})`);
+  if (ctx.ref !== `refs/heads/${defaultBranch}`)
+    throw new Error(
+      `remediation runs only on the default branch (${defaultBranch}), not ${ctx.ref}`
+    );
+  const owner = ctx.repository.split("/")[0];
+  const outcomes = [];
+  const ordered = [...plans].sort(
+    (a, b) => (deadlineOf(a.event)?.date ?? "9999").localeCompare(deadlineOf(b.event)?.date ?? "9999")
+  );
+  for (const plan of ordered) {
+    if (outcomes.filter((o) => o.status === "opened").length >= MAX_PULLS) break;
+    const branch = branchFor(plan.event.id);
+    try {
+      const earlier = await api(
+        "GET",
+        `/pulls?state=all&head=${encodeURIComponent(`${owner}:${branch}`)}`
+      );
+      if (earlier.status !== 200 || !Array.isArray(earlier.json))
+        throw new Error(`could not list pull requests (HTTP ${earlier.status})`);
+      const pulls = earlier.json;
+      const open2 = pulls.find((p) => p.state === "open");
+      if (open2) {
+        outcomes.push({
+          eventId: plan.event.id,
+          status: "exists",
+          ...typeof open2.html_url === "string" ? { url: open2.html_url } : {}
+        });
+        continue;
+      }
+      if (pulls.length > 0) {
+        outcomes.push({
+          eventId: plan.event.id,
+          status: "declined",
+          ...typeof pulls[0]?.html_url === "string" ? { url: pulls[0].html_url } : {}
+        });
+        continue;
+      }
+      const files = [];
+      for (const path of [...new Set(plan.edits.map((e) => e.path))]) {
+        const current = await api("GET", `${contentsPath(path)}?ref=${ctx.sha}`);
+        const doc = current.json;
+        if (current.status !== 200 || typeof doc?.sha !== "string" || typeof doc.content !== "string" || doc.encoding !== "base64") {
+          throw new Error(`could not read ${path} at the scanned commit (HTTP ${current.status})`);
+        }
+        const text = utf8Text(Buffer.from(doc.content, "base64"));
+        const next = text === void 0 ? void 0 : editedText(text, plan, path);
+        if (next === void 0) throw new Error(`${path} is not UTF-8 or does not match the scan`);
+        files.push({ path, content: next, sha: doc.sha });
+      }
+      const created = await api("POST", "/git/refs", { ref: `refs/heads/${branch}`, sha: ctx.sha });
+      if (created.status !== 201) {
+        const leftover = await api(
+          "GET",
+          `/git/ref/heads/${branch.split("/").map(encodeURIComponent).join("/")}`
+        );
+        const at = leftover.json?.object?.sha;
+        if (leftover.status !== 200 || at !== ctx.sha)
+          throw new Error(`branch ${branch} already exists: delete it to get a new pull request`);
+      }
+      for (const file2 of files) {
+        const put = await api("PUT", contentsPath(file2.path), {
+          message: `Replace ${plan.from} with ${plan.to} in ${file2.path}`.slice(0, 200),
+          content: Buffer.from(file2.content, "utf8").toString("base64"),
+          sha: file2.sha,
+          branch
+        });
+        if (put.status !== 200 && put.status !== 201)
+          throw new Error(`could not commit ${file2.path} (HTTP ${put.status})`);
+      }
+      const { title, body } = pullRequestFor(plan, ctx.vendors);
+      const pr = await api("POST", "/pulls", {
+        title,
+        body,
+        head: branch,
+        base: defaultBranch,
+        maintainer_can_modify: true
+      });
+      const url2 = pr.json?.html_url;
+      if (pr.status !== 201) throw new Error(`could not open the pull request (HTTP ${pr.status})`);
+      outcomes.push({
+        eventId: plan.event.id,
+        status: "opened",
+        ...typeof url2 === "string" ? { url: url2 } : {}
+      });
+    } catch (error2) {
+      outcomes.push({
+        eventId: plan.event.id,
+        status: "failed",
+        message: error2.message.slice(0, 200)
+      });
+    }
+  }
+  return outcomes;
+};
+
 // src/upload.ts
 var INGEST_URL = "https://api.harbyn.com/ingest/manifest";
 var OIDC_AUDIENCE = "https://api.harbyn.com";
@@ -13918,14 +14418,14 @@ var toManifest = (result2, scannerVersion, options = {}) => {
   for (const f of result2.findings) {
     vendors.add(f.event.vendor);
     const listed = new Set(f.event.affects.flatMap((a) => "values" in a ? a.values : []));
-    const identifier = listed.has(f.token) ? f.token : void 0;
-    const key = `${f.event.id}|${identifier ?? ""}|${f.via}|${f.context}`;
+    const identifier2 = listed.has(f.token) ? f.token : void 0;
+    const key = `${f.event.id}|${identifier2 ?? ""}|${f.via}|${f.context}`;
     const group = groups.get(key);
     if (group) group.count += 1;
     else
       groups.set(key, {
         eventId: f.event.id,
-        ...identifier ? { identifier } : {},
+        ...identifier2 ? { identifier: identifier2 } : {},
         via: f.via,
         context: f.context,
         count: 1
@@ -14006,21 +14506,21 @@ var fail = (message) => {
   console.log(workflowCommand("error", CLI_NAME, message));
   process.exit(1);
 };
-var workspace = resolve2(process.env.GITHUB_WORKSPACE ?? process.cwd());
-var target2 = resolve2(workspace, input2("path") || ".");
+var workspace = resolve3(process.env.GITHUB_WORKSPACE ?? process.cwd());
+var target2 = resolve3(workspace, input2("path") || ".");
 var outside = (from, to) => {
-  const rel = relative2(from, to);
-  return isAbsolute(rel) || rel.split(sep2).includes("..");
+  const rel = relative3(from, to);
+  return isAbsolute2(rel) || rel.split(sep3).includes("..");
 };
-var inside = relative2(workspace, target2);
+var inside = relative3(workspace, target2);
 if (outside(workspace, target2)) fail("the path input must stay inside the repository workspace");
 try {
-  if (outside(realpathSync(workspace), realpathSync(target2)))
+  if (outside(realpathSync2(workspace), realpathSync2(target2)))
     fail("the path input must stay inside the repository workspace");
 } catch {
   fail("the path input does not exist in the repository");
 }
-var pathPrefix = inside.split(sep2).join("/");
+var pathPrefix = inside.split(sep3).join("/");
 var failOn = input2("fail-on") || "none";
 if (failOn !== "none" && failOn !== "findings") fail("fail-on must be 'none' or 'findings'");
 var onFeedError = input2("on-feed-error") || "warn";
@@ -14036,6 +14536,9 @@ if (inventory !== "true" && inventory !== "false") fail("inventory must be 'true
 if (inventory === "true" && upload !== "true")
   fail("inventory needs upload: true (it only decides what the upload includes)");
 var onUploadError = input2("on-upload-error") || "warn";
+var remediate = (input2("remediate") || "false").toLowerCase();
+if (remediate !== "true" && remediate !== "false") fail("remediate must be 'true' or 'false'");
+var githubToken = input2("github-token");
 if (onUploadError !== "warn" && onUploadError !== "fail")
   fail("on-upload-error must be 'warn' or 'fail'");
 var now = /* @__PURE__ */ new Date();
@@ -14049,7 +14552,7 @@ var feed = await (async () => {
   try {
     return await getFeed({
       now,
-      ...feedDir ? { feedDir: resolve2(workspace, feedDir) } : {},
+      ...feedDir ? { feedDir: resolve3(workspace, feedDir) } : {},
       onWarning: (message) => console.log(workflowCommand("warning", CLI_NAME, message))
     });
   } catch (error2) {
@@ -14069,8 +14572,8 @@ if (process.env.GITHUB_STEP_SUMMARY) {
     toStepSummary(result, today, CLI_NAME, pathPrefix, upload === "true")
   );
 }
-var reportPath = join4(process.env.RUNNER_TEMP ?? workspace, `${CLI_NAME}-report.json`);
-writeFileSync2(reportPath, JSON.stringify(toJson(result), null, 2));
+var reportPath = join5(process.env.RUNNER_TEMP ?? workspace, `${CLI_NAME}-report.json`);
+writeFileSync3(reportPath, JSON.stringify(toJson(result), null, 2));
 var count = actionable(result).length;
 writeOutput("findings", String(count));
 writeOutput("report", reportPath);
@@ -14113,5 +14616,72 @@ ${pretty}
         `upload: ${outcome.message}. The scan above is complete; only the dashboard misses this run.`
       )
     );
+}
+if (remediate === "true") {
+  const event = process.env.GITHUB_EVENT_NAME ?? "";
+  if (!["push", "schedule", "workflow_dispatch"].includes(event)) {
+    console.log(
+      workflowCommand(
+        "notice",
+        CLI_NAME,
+        `remediation skipped: it runs on push, schedule or workflow_dispatch, not ${event || "this event"}`
+      )
+    );
+  } else if (!githubToken) {
+    console.log(
+      workflowCommand(
+        "warning",
+        CLI_NAME,
+        "remediation needs a token: grant the job contents: write and pull-requests: write"
+      )
+    );
+  } else {
+    const vendors = new Map(feed.vendors.map((v) => [v.id, v]));
+    const { plans, unfixable } = planFixes(result, { root: target2, vendors });
+    try {
+      const outcomes = await openPullRequests(plans, {
+        repository: process.env.GITHUB_REPOSITORY ?? "",
+        sha: process.env.GITHUB_SHA ?? "",
+        ref: process.env.GITHUB_REF ?? "",
+        token: githubToken,
+        vendors,
+        fetch
+      });
+      for (const o of outcomes) {
+        const verb = {
+          opened: "opened",
+          exists: "already open",
+          declined: "declined earlier, not reopened",
+          failed: ""
+        }[o.status];
+        const line = o.status === "failed" ? `could not open a fix for ${o.eventId}: ${o.message ?? "unknown error"}` : `${verb}: ${o.url ?? o.eventId}`;
+        console.log(
+          o.status === "failed" ? workflowCommand("warning", CLI_NAME, line) : `${CLI_NAME}: ${line}`
+        );
+      }
+      writeOutput(
+        "pull-requests",
+        outcomes.filter((o) => o.url).map((o) => o.url).join(" ")
+      );
+      if (process.env.GITHUB_STEP_SUMMARY && (outcomes.length > 0 || unfixable.length > 0)) {
+        const rows = outcomes.map(
+          (o) => `- ${o.status}: ${o.url ? mdText(o.url) : mdText(o.eventId)}${o.message ? ` (${mdText(o.message)})` : ""}`
+        );
+        const left = unfixable.map((u) => `- ${mdText(u.event.title)}: ${mdText(u.reason)}`);
+        appendFileSync(
+          process.env.GITHUB_STEP_SUMMARY,
+          `
+### Fixes
+
+${[...rows, ...left.length ? ["", "Left for a person:", ...left] : []].join("\n")}
+`
+        );
+      }
+    } catch (error2) {
+      console.log(
+        workflowCommand("warning", CLI_NAME, `remediation skipped: ${error2.message}`)
+      );
+    }
+  }
 }
 process.exit(failOn === "findings" && count > 0 ? 1 : 0);

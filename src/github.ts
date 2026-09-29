@@ -14,7 +14,7 @@ export const escapeData = (s: string): string =>
 const escapeProperty = (s: string): string =>
   escapeData(s).replaceAll(":", "%3A").replaceAll(",", "%2C");
 
-export type Level = "error" | "warning";
+export type Level = "error" | "warning" | "notice";
 
 export const workflowCommand = (level: Level, title: string, message: string): string =>
   `::${level} title=${escapeProperty(safe(title))}::${escapeData(cap(safe(message), MAX_MESSAGE))}`;
@@ -35,7 +35,7 @@ const byDeadline = (a: Finding, b: Finding): number =>
   a.line - b.line;
 
 export const toAnnotations = (result: ScanResult, today: string, pathPrefix = ""): string[] => {
-  const shown: Record<Level, number> = { error: 0, warning: 0 };
+  const shown: Record<Level, number> = { error: 0, warning: 0, notice: 0 };
   const lines: string[] = [];
   for (const finding of [...actionable(result)].sort(byDeadline)) {
     const level = levelOf(finding, today);

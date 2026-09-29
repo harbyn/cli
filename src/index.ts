@@ -4,6 +4,7 @@ import { InventoryCollector } from "./inventory.ts";
 import type { ScanResult } from "./report.ts";
 import { newStats, type WalkOptions, walk } from "./walk.ts";
 
+export * from "./fix.ts";
 export * from "./ignore.ts";
 export * from "./inventory.ts";
 export * from "./match.ts";

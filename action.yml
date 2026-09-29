@@ -34,6 +34,14 @@ inputs:
     description: "'false' (default). 'true' adds the dependency list to the upload: ecosystem, name, exact version, direct, dev, for public-registry packages only (private, workspace, link and git entries are never sent). Needs upload."
     required: false
     default: "false"
+  remediate:
+    description: "'false' (default). 'true' opens pull requests that replace retired model ids and API versions with the ones their vendors name, on runs of the default branch (push, schedule, workflow_dispatch). Needs contents: write and pull-requests: write. Payments, auth and crypto code is never changed."
+    required: false
+    default: "false"
+  github-token:
+    description: Token for remediation pull requests. The job's own token by default; pass one that can trigger workflows if you want your CI to run on them.
+    required: false
+    default: ${{ github.token }}
   on-upload-error:
     description: "When the upload fails the scan still completes. 'warn' (default) leaves the step green with a warning; 'fail' fails it."
     required: false
@@ -48,6 +56,8 @@ outputs:
     description: Number of affected lines in code (empty when the feed could not be verified).
   report:
     description: Path of the full JSON report on the runner.
+  pull-requests:
+    description: URLs of the remediation pull requests opened or already open, space separated.
 
 runs:
   using: node24

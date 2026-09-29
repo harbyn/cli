@@ -28,12 +28,17 @@ export const changeKind = z.enum([
 
 export const severity = z.enum(["critical", "high", "medium", "low", "info"]);
 
+const identifier = literalToken.refine(
+  (t) => !/:\/\/|\/\/|\.\.|^\/|\/$/.test(t),
+  "must not look like a URL or a path",
+);
+
 export const target = z.discriminatedUnion("type", [
-  z.strictObject({ type: z.literal("model-id"), values: z.array(literalToken).min(1).max(64) }),
+  z.strictObject({ type: z.literal("model-id"), values: z.array(identifier).min(1).max(64) }),
   z.strictObject({
     type: z.literal("api-version"),
     header: literalToken.optional(),
-    values: z.array(literalToken).min(1).max(64),
+    values: z.array(identifier).min(1).max(64),
   }),
   z.strictObject({
     type: z.literal("endpoint"),

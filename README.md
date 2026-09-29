@@ -65,16 +65,18 @@ jobs:
 Annotations appear on the affected lines in pull requests, and the job summary lists every affected line with the
 deadline, the replacement and the vendor's announcement. Pin the action by commit SHA.
 
-| Input             | Default |                                                                      |
-| ----------------- | ------- | -------------------------------------------------------------------- |
-| `path`            | `.`     | directory to scan, inside the repository                             |
-| `ignore`          |         | extra ignore patterns, one per line                                  |
-| `fail-on`         | `none`  | `findings` fails the step when code is affected                      |
-| `on-feed-error`   | `warn`  | `fail` fails the step when the feed cannot be verified               |
-| `upload`          | `false` | `true` sends the result to your Harbyn dashboard                     |
-| `connection`      |         | the connection id from your dashboard, used only with `upload`       |
-| `inventory`       | `false` | `true` adds the dependency list to the upload (public packages only) |
-| `on-upload-error` | `warn`  | `fail` fails the step when the upload fails                          |
+| Input             | Default   |                                                                          |
+| ----------------- | --------- | ------------------------------------------------------------------------ |
+| `path`            | `.`       | directory to scan, inside the repository                                 |
+| `ignore`          |           | extra ignore patterns, one per line                                      |
+| `fail-on`         | `none`    | `findings` fails the step when code is affected                          |
+| `on-feed-error`   | `warn`    | `fail` fails the step when the feed cannot be verified                   |
+| `upload`          | `false`   | `true` sends the result to your Harbyn dashboard                         |
+| `connection`      |           | the connection id from your dashboard, used only with `upload`           |
+| `inventory`       | `false`   | `true` adds the dependency list to the upload (public packages only)     |
+| `remediate`       | `false`   | `true` opens fix pull requests on runs of the default branch (see below) |
+| `github-token`    | job token | token for fix pull requests                                              |
+| `on-upload-error` | `warn`    | `fail` fails the step when the upload fails                              |
 
 Outputs: `findings` (number of affected lines) and `report` (path of the JSON report on the runner).
 
@@ -88,6 +90,15 @@ printed in the job summary before it is sent, to `https://api.harbyn.com/ingest/
 There is no secret to store: GitHub signs a short-lived token that says which repository the run belongs to, and the
 upload is accepted only for the repository you connected. Pull requests from forks never get that token, so they never
 upload.
+
+### Fix pull requests
+
+`harbyn fix` shows the changes that replace a retired model id or API version with the one its vendor names;
+`harbyn fix --write` applies them to your working tree. In the Action, `remediate: true` opens them as pull requests
+on runs of the default branch (push, schedule, workflow_dispatch), with the job's token (`contents: write`,
+`pull-requests: write`): at most three per run, one branch per change, never a push to the default branch, never a
+merge. Only reviewed changes with exactly one replacement are fixed, only inside string literals on the lines the scan
+found. Tests, docs, and payments, authentication or cryptography code are never edited.
 
 ## What it does and does not do
 

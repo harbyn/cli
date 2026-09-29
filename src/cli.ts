@@ -2,12 +2,26 @@ import { resolve } from "node:path";
 import { FeedVerificationError } from "./feed/index.ts";
 import { config } from "zod";
 import { getFeed } from "./feed-source.ts";
-import { actionable, scan, toDependencyText, toJson, toText } from "./index.ts";
+import {
+  actionable,
+  applyFixes,
+  planFixes,
+  scan,
+  toDependencyText,
+  toFixText,
+  toJson,
+  toText,
+} from "./index.ts";
 import { CLI_NAME, CLI_VERSION } from "./product.ts";
 
 config({ jitless: true });
 
 const USAGE = `usage: ${CLI_NAME} scan [dir] [options]
+       ${CLI_NAME} fix [dir] [--write] [options]
+
+  fix                 show the changes that replace retired models and API versions with the ones their
+                      vendors name; --write applies them to the working tree (payments, auth and crypto
+                      code is never changed)
 
   --json              machine-readable output
   --ci                exit 1 when there are findings in code
@@ -37,7 +51,8 @@ if (flag("--version")) {
   console.log(CLI_VERSION);
   process.exit(0);
 }
-if (flag("--help") || flag("-h") || (positional[0] !== undefined && positional[0] !== "scan")) {
+const command = positional[0] ?? "scan";
+if (flag("--help") || flag("-h") || (command !== "scan" && command !== "fix")) {
   console.log(USAGE);
   process.exit(flag("--help") || flag("-h") ? 0 : 2);
 }
@@ -60,6 +75,33 @@ try {
     noGitignore: flag("--no-gitignore"),
   });
   const today = now.toISOString().slice(0, 10);
+  if (command === "fix") {
+    const { plans, unfixable } = planFixes(result, {
+      root: target,
+      vendors: new Map(feed.vendors.map((v) => [v.id, v])),
+    });
+    const written = flag("--write") ? applyFixes(target, plans) : undefined;
+    console.log(
+      flag("--json")
+        ? JSON.stringify(
+            {
+              plans: plans.map((p) => ({
+                eventId: p.event.id,
+                from: p.from,
+                to: p.to,
+                edits: p.edits,
+                skipped: p.skipped,
+              })),
+              unfixable: unfixable.map((u) => ({ eventId: u.event.id, reason: u.reason })),
+              ...(written ? { written } : {}),
+            },
+            null,
+            2,
+          )
+        : toFixText(plans, unfixable, written),
+    );
+    process.exit(0);
+  }
   console.log(
     flag("--json")
       ? JSON.stringify(toJson(result), null, 2)

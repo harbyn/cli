@@ -3,9 +3,11 @@ import { isAbsolute, join, relative, resolve, sep } from "node:path";
 import { FeedVerificationError } from "./feed/index.ts";
 import { config } from "zod";
 import { getFeed } from "./feed-source.ts";
-import { toAnnotations, toStepSummary, workflowCommand } from "./github.ts";
+import { mdText, toAnnotations, toStepSummary, workflowCommand } from "./github.ts";
 import { actionable, scan, toJson } from "./index.ts";
 import { CLI_NAME, CLI_VERSION } from "./product.ts";
+import { planFixes } from "./fix.ts";
+import { openPullRequests } from "./pulls.ts";
 import {
   CONNECTION_ID,
   requestOidcToken,
@@ -58,6 +60,9 @@ if (inventory !== "true" && inventory !== "false") fail("inventory must be 'true
 if (inventory === "true" && upload !== "true")
   fail("inventory needs upload: true (it only decides what the upload includes)");
 const onUploadError = input("on-upload-error") || "warn";
+const remediate = (input("remediate") || "false").toLowerCase();
+if (remediate !== "true" && remediate !== "false") fail("remediate must be 'true' or 'false'");
+const githubToken = input("github-token");
 if (onUploadError !== "warn" && onUploadError !== "fail")
   fail("on-upload-error must be 'warn' or 'fail'");
 
@@ -142,5 +147,77 @@ ${pretty}
         `upload: ${outcome.message}. The scan above is complete; only the dashboard misses this run.`,
       ),
     );
+}
+if (remediate === "true") {
+  const event = process.env.GITHUB_EVENT_NAME ?? "";
+  if (!["push", "schedule", "workflow_dispatch"].includes(event)) {
+    console.log(
+      workflowCommand(
+        "notice",
+        CLI_NAME,
+        `remediation skipped: it runs on push, schedule or workflow_dispatch, not ${event || "this event"}`,
+      ),
+    );
+  } else if (!githubToken) {
+    console.log(
+      workflowCommand(
+        "warning",
+        CLI_NAME,
+        "remediation needs a token: grant the job contents: write and pull-requests: write",
+      ),
+    );
+  } else {
+    const vendors = new Map(feed.vendors.map((v) => [v.id, v]));
+    const { plans, unfixable } = planFixes(result, { root: target, vendors });
+    try {
+      const outcomes = await openPullRequests(plans, {
+        repository: process.env.GITHUB_REPOSITORY ?? "",
+        sha: process.env.GITHUB_SHA ?? "",
+        ref: process.env.GITHUB_REF ?? "",
+        token: githubToken,
+        vendors,
+        fetch,
+      });
+      for (const o of outcomes) {
+        const verb = {
+          opened: "opened",
+          exists: "already open",
+          declined: "declined earlier, not reopened",
+          failed: "",
+        }[o.status];
+        const line =
+          o.status === "failed"
+            ? `could not open a fix for ${o.eventId}: ${o.message ?? "unknown error"}`
+            : `${verb}: ${o.url ?? o.eventId}`;
+        console.log(
+          o.status === "failed"
+            ? workflowCommand("warning", CLI_NAME, line)
+            : `${CLI_NAME}: ${line}`,
+        );
+      }
+      writeOutput(
+        "pull-requests",
+        outcomes
+          .filter((o) => o.url)
+          .map((o) => o.url)
+          .join(" "),
+      );
+      if (process.env.GITHUB_STEP_SUMMARY && (outcomes.length > 0 || unfixable.length > 0)) {
+        const rows = outcomes.map(
+          (o) =>
+            `- ${o.status}: ${o.url ? mdText(o.url) : mdText(o.eventId)}${o.message ? ` (${mdText(o.message)})` : ""}`,
+        );
+        const left = unfixable.map((u) => `- ${mdText(u.event.title)}: ${mdText(u.reason)}`);
+        appendFileSync(
+          process.env.GITHUB_STEP_SUMMARY,
+          `\n### Fixes\n\n${[...rows, ...(left.length ? ["", "Left for a person:", ...left] : [])].join("\n")}\n`,
+        );
+      }
+    } catch (error) {
+      console.log(
+        workflowCommand("warning", CLI_NAME, `remediation skipped: ${(error as Error).message}`),
+      );
+    }
+  }
 }
 process.exit(failOn === "findings" && count > 0 ? 1 : 0);
