@@ -53,6 +53,10 @@ if (upload !== "true" && upload !== "false") fail("upload must be 'true' or 'fal
 const connection = input("connection").toLowerCase();
 if (upload === "true" && !CONNECTION_ID.test(connection))
   fail("upload needs the connection id shown in your Harbyn dashboard (Repositories)");
+const inventory = (input("inventory") || "false").toLowerCase();
+if (inventory !== "true" && inventory !== "false") fail("inventory must be 'true' or 'false'");
+if (inventory === "true" && upload !== "true")
+  fail("inventory needs upload: true (it only decides what the upload includes)");
 const onUploadError = input("on-upload-error") || "warn";
 if (onUploadError !== "warn" && onUploadError !== "fail")
   fail("on-upload-error must be 'warn' or 'fail'");
@@ -105,7 +109,10 @@ console.log(
 if (upload === "true") {
   let outcome: { ok: boolean; message: string };
   try {
-    const body = uploadBody(connection, toManifest(result, CLI_VERSION));
+    const body = uploadBody(
+      connection,
+      toManifest(result, CLI_VERSION, { inventory: inventory === "true" }),
+    );
     if (process.env.GITHUB_STEP_SUMMARY) {
       const pretty = JSON.stringify(JSON.parse(body), null, 2);
       appendFileSync(

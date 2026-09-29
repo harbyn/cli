@@ -1,6 +1,7 @@
 import { existsSync, lstatSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { IgnoreRules } from "./ignore.ts";
+import { INVENTORY_FILES, MAX_LOCKFILE_BYTES } from "./inventory.ts";
 
 const SKIP_DIRS = new Set([
   ".git",
@@ -58,6 +59,7 @@ export interface WalkOptions {
   ignore?: string[];
   includeNestedRepos?: boolean;
   noGitignore?: boolean;
+  onLockfile?: (file: SourceFile) => void;
 }
 
 export const newStats = (): WalkStats => ({
@@ -127,6 +129,18 @@ export function* walk(
       if (!stat.isFile()) continue;
       if (SECRET_FILE.test(name)) {
         stats.skippedSecret++;
+        continue;
+      }
+      if (
+        options.onLockfile &&
+        INVENTORY_FILES.has(name) &&
+        stat.size > 0 &&
+        stat.size <= MAX_LOCKFILE_BYTES &&
+        !rules.ignores(rel, false)
+      ) {
+        try {
+          options.onLockfile({ path: rel, text: readFileSync(full, "utf8") });
+        } catch {}
         continue;
       }
       if (

@@ -25,18 +25,20 @@ version it pins, the endpoint it calls.
 npx harbyn scan
 npx harbyn scan path/to/repo --json
 npx harbyn scan --ci
+npx harbyn scan --deps
 ```
 
-| Option             |                                                                 |
-| ------------------ | --------------------------------------------------------------- |
-| `--json`           | machine-readable output                                         |
-| `--ci`             | exit 1 when there are findings in code                          |
-| `--all`            | also list low-confidence findings (tests, docs, model catalogs) |
-| `--ignore <glob>`  | extra ignore pattern, repeatable                                |
-| `--include-nested` | also scan nested git repositories                               |
-| `--no-gitignore`   | do not honour `.gitignore` files                                |
-| `--offline`        | use the cached feed, make no network request                    |
-| `--version`        | print the version                                               |
+| Option             |                                                                   |
+| ------------------ | ----------------------------------------------------------------- |
+| `--json`           | machine-readable output                                           |
+| `--ci`             | exit 1 when there are findings in code                            |
+| `--all`            | also list low-confidence findings (tests, docs, model catalogs)   |
+| `--deps`           | list every dependency found in lockfiles (public registries only) |
+| `--ignore <glob>`  | extra ignore pattern, repeatable                                  |
+| `--include-nested` | also scan nested git repositories                                 |
+| `--no-gitignore`   | do not honour `.gitignore` files                                  |
+| `--offline`        | use the cached feed, make no network request                      |
+| `--version`        | print the version                                                 |
 
 `.gitignore` and `.harbynignore` (same syntax) are honoured.
 
@@ -63,15 +65,16 @@ jobs:
 Annotations appear on the affected lines in pull requests, and the job summary lists every affected line with the
 deadline, the replacement and the vendor's announcement. Pin the action by commit SHA.
 
-| Input             | Default |                                                                |
-| ----------------- | ------- | -------------------------------------------------------------- |
-| `path`            | `.`     | directory to scan, inside the repository                       |
-| `ignore`          |         | extra ignore patterns, one per line                            |
-| `fail-on`         | `none`  | `findings` fails the step when code is affected                |
-| `on-feed-error`   | `warn`  | `fail` fails the step when the feed cannot be verified         |
-| `upload`          | `false` | `true` sends the result to your Harbyn dashboard               |
-| `connection`      |         | the connection id from your dashboard, used only with `upload` |
-| `on-upload-error` | `warn`  | `fail` fails the step when the upload fails                    |
+| Input             | Default |                                                                      |
+| ----------------- | ------- | -------------------------------------------------------------------- |
+| `path`            | `.`     | directory to scan, inside the repository                             |
+| `ignore`          |         | extra ignore patterns, one per line                                  |
+| `fail-on`         | `none`  | `findings` fails the step when code is affected                      |
+| `on-feed-error`   | `warn`  | `fail` fails the step when the feed cannot be verified               |
+| `upload`          | `false` | `true` sends the result to your Harbyn dashboard                     |
+| `connection`      |         | the connection id from your dashboard, used only with `upload`       |
+| `inventory`       | `false` | `true` adds the dependency list to the upload (public packages only) |
+| `on-upload-error` | `warn`  | `fail` fails the step when the upload fails                          |
 
 Outputs: `findings` (number of affected lines) and `report` (path of the JSON report on the runner).
 

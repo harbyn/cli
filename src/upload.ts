@@ -7,7 +7,11 @@ export const OIDC_AUDIENCE = "https://api.harbyn.com";
 
 export const CONNECTION_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 
-export const toManifest = (result: ScanResult, scannerVersion: string): RepoManifest => {
+export const toManifest = (
+  result: ScanResult,
+  scannerVersion: string,
+  options: { inventory?: boolean } = {},
+): RepoManifest => {
   const groups = new Map<string, RepoManifest["findings"][number]>();
   const vendors = new Set<string>(result.usage.map((u) => u.vendor.id));
   for (const f of result.findings) {
@@ -40,6 +44,20 @@ export const toManifest = (result: ScanResult, scannerVersion: string): RepoMani
     filesScanned: result.stats.scanned,
     vendors: [...vendors].sort().slice(0, MANIFEST_LIMITS.vendors),
     findings,
+    ...(options.inventory && result.inventory
+      ? {
+          packages: [...result.inventory.dependencies]
+            .sort((a, b) => Number(b.direct) - Number(a.direct))
+            .slice(0, MANIFEST_LIMITS.packages)
+            .map(({ ecosystem, name, version, direct, dev }) => ({
+              ecosystem,
+              name,
+              version,
+              direct,
+              dev,
+            })),
+        }
+      : {}),
   });
 };
 

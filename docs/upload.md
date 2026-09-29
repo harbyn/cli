@@ -33,8 +33,19 @@ document is printed in the job summary before it is sent. Nothing else is sent, 
 | `findings[].via`        | `model-id`, `api-version`, `package` or `endpoint`                     |
 | `findings[].context`    | `code`, `test`, `docs` or `catalog`                                    |
 | `findings[].count`      | number of matches                                                      |
+| `packages`              | only with `inventory: true`: the dependency list, at most 5000         |
+| `packages[].ecosystem`  | `npm` or `pypi`                                                        |
+| `packages[].name`       | package name on the public registry                                    |
+| `packages[].version`    | exact version from the lockfile                                        |
+| `packages[].direct`     | declared by the project, not only pulled in by another package         |
+| `packages[].dev`        | used only in development                                               |
 
-Every string is a term from the public feed. The server rejects the document if any vendor, event or identifier is
+`packages` comes from lockfiles (package-lock, npm-shrinkwrap, pnpm-lock, yarn.lock, poetry.lock, uv.lock, pinned
+requirements). Only packages resolved from the public npm registry or PyPI are listed: private registries,
+workspace, link, file and git dependencies are never included. The server also checks each name against the public
+registry and deletes any it cannot find.
+
+Every other string is a term from the public feed. The server rejects the document if any vendor, event or identifier is
 not in the feed, so nothing taken from the repository itself can be stored. Paths, line numbers and code are never
 part of it.
 

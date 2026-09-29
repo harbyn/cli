@@ -1,4 +1,5 @@
 import { type ChangeEvent, deadlineOf } from "./schema/index.ts";
+import type { Inventory } from "./inventory.ts";
 import type { Finding, VendorUsage } from "./match.ts";
 import type { WalkStats } from "./walk.ts";
 
@@ -6,6 +7,7 @@ export interface ScanResult {
   findings: Finding[];
   usage: VendorUsage[];
   stats: WalkStats;
+  inventory?: Inventory;
 }
 
 export const safe = (s: string): string =>
@@ -68,7 +70,31 @@ export const toJson = (result: ScanResult) => ({
     replacement: f.event.replacement?.targets.flatMap((t) => ("values" in t ? t.values : [])) ?? [],
     source: f.event.sources[0]?.url ?? null,
   })),
+  dependencies: result.inventory?.dependencies ?? [],
 });
+
+export const toDependencyText = (result: ScanResult): string => {
+  const inv = result.inventory;
+  if (!inv || inv.dependencies.length === 0)
+    return "No dependencies found in lockfiles (package-lock, pnpm-lock, yarn.lock, poetry.lock, uv.lock, pinned requirements).";
+  const out = inv.dependencies.map(
+    (d) =>
+      `${d.ecosystem.padEnd(5)} ${safe(d.name)}@${safe(d.version)}${d.direct ? "" : "  (transitive)"}${d.dev ? "  (dev)" : ""}`,
+  );
+  out.push("", dependencySummary(result));
+  return out.join("\n");
+};
+
+export const dependencySummary = (result: ScanResult): string => {
+  const inv = result.inventory;
+  if (!inv) return "";
+  const direct = inv.dependencies.filter((d) => d.direct).length;
+  const skipped =
+    inv.skippedNonPublic > 0
+      ? `; ${inv.skippedNonPublic} private, workspace or git entries not listed`
+      : "";
+  return `${inv.dependencies.length} dependencies (${direct} direct) from ${inv.files.length} ${inv.files.length === 1 ? "lockfile" : "lockfiles"}${skipped}`;
+};
 
 export const sortKey = (group: Finding[]): string =>
   (group[0] ? deadlineOf(group[0].event)?.date : undefined) ?? "9999";
@@ -116,6 +142,8 @@ export const toText = (result: ScanResult, today: string, showAll = false): stri
   );
   if (low > 0 && !showAll)
     out.push(`${low} more in tests, docs and model catalogs (low confidence) - show with --all`);
+  if (result.inventory && result.inventory.dependencies.length > 0)
+    out.push(`${dependencySummary(result)} - list with --deps`);
   if (nested.length > 0) {
     out.push(
       `skipped ${nested.length} nested repo(s): ${nested.slice(0, 5).map(safe).join(", ")}${nested.length > 5 ? ", ..." : ""} - include with --include-nested`,

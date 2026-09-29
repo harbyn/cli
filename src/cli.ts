@@ -2,7 +2,7 @@ import { resolve } from "node:path";
 import { FeedVerificationError } from "./feed/index.ts";
 import { config } from "zod";
 import { getFeed } from "./feed-source.ts";
-import { actionable, scan, toJson, toText } from "./index.ts";
+import { actionable, scan, toDependencyText, toJson, toText } from "./index.ts";
 import { CLI_NAME, CLI_VERSION } from "./product.ts";
 
 config({ jitless: true });
@@ -12,6 +12,7 @@ const USAGE = `usage: ${CLI_NAME} scan [dir] [options]
   --json              machine-readable output
   --ci                exit 1 when there are findings in code
   --all               also list low-confidence findings (tests, docs, model catalogs)
+  --deps              list every dependency found in lockfiles (public registries only)
   --ignore <glob>     extra ignore pattern, repeatable (.gitignore and .harbynignore are honoured)
   --include-nested    also scan nested git repositories
   --no-gitignore      do not honour .gitignore files
@@ -58,10 +59,13 @@ try {
     includeNestedRepos: flag("--include-nested"),
     noGitignore: flag("--no-gitignore"),
   });
+  const today = now.toISOString().slice(0, 10);
   console.log(
     flag("--json")
       ? JSON.stringify(toJson(result), null, 2)
-      : toText(result, now.toISOString().slice(0, 10), flag("--all")),
+      : flag("--deps")
+        ? toDependencyText(result)
+        : toText(result, today, flag("--all")),
   );
   process.exit(flag("--ci") && actionable(result).length > 0 ? 1 : 0);
 } catch (error) {

@@ -98,6 +98,27 @@ describe("manifest built by the Action", () => {
       expect(sent).not.toContain(leak);
   });
 
+  it("sends the dependency list only when the inventory is turned on, direct dependencies first", () => {
+    const withInventory = {
+      ...result,
+      inventory: {
+        dependencies: [
+          { ecosystem: "npm", name: "debug", version: "4.4.0", direct: false, dev: false },
+          { ecosystem: "npm", name: "stripe", version: "16.2.0", direct: true, dev: false },
+        ],
+        files: ["services/billing/package-lock.json"],
+        skippedNonPublic: 3,
+        skippedInvalid: 0,
+      },
+    } as unknown as ScanResult;
+    expect(toManifest(withInventory, "0.1.0").packages).toBeUndefined();
+    const manifest = toManifest(withInventory, "0.1.0", { inventory: true });
+    expect(manifest.packages?.map((p) => p.name)).toEqual(["stripe", "debug"]);
+    const sent = uploadBody("11111111-2222-4333-8444-555555555555", manifest);
+    expect(sent).not.toContain("services/billing");
+    expect(sent).not.toContain("skipped");
+  });
+
   it("abuse: a repository that overflows the limits gets a clamped manifest, not an error", () => {
     const many = MANIFEST_LIMITS.count + 1;
     const flood = {

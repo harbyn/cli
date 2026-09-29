@@ -12590,7 +12590,25 @@ var signatureEnvelope = external_exports.strictObject({
 });
 
 // src/schema/repo-manifest.ts
-var MANIFEST_LIMITS = { findings: 1e3, vendors: 200, count: 1e5 };
+var MANIFEST_LIMITS = {
+  findings: 1e3,
+  vendors: 200,
+  count: 1e5,
+  packages: 5e3
+};
+var NPM_PACKAGE_NAME = /^(?:@[a-z0-9][a-z0-9._~-]{0,100}\/)?[a-z0-9][a-z0-9._~-]{0,213}$/;
+var PYPI_PACKAGE_NAME = /^[a-z0-9](?:[a-z0-9-]{0,98}[a-z0-9])?$/;
+var PACKAGE_VERSION = /^[0-9][0-9A-Za-z.+_-]{0,63}$/;
+var manifestPackage = external_exports.strictObject({
+  ecosystem: external_exports.enum(["npm", "pypi"]),
+  name: external_exports.string().max(214),
+  version: external_exports.string().regex(PACKAGE_VERSION),
+  direct: external_exports.boolean(),
+  dev: external_exports.boolean()
+}).refine(
+  (p) => (p.ecosystem === "npm" ? NPM_PACKAGE_NAME : PYPI_PACKAGE_NAME).test(p.name),
+  "not a public package name"
+);
 var eventId = external_exports.string().max(160).regex(/^[a-z0-9-]+\/\d{4}-\d{2}-\d{2}-[a-z0-9]+(?:-[a-z0-9]+)*$/);
 var manifestFinding = external_exports.strictObject({
   eventId,
@@ -12604,7 +12622,8 @@ var repoManifest = external_exports.strictObject({
   scanner: external_exports.string().regex(/^\d{1,4}\.\d{1,4}\.\d{1,4}(?:-[0-9A-Za-z.-]{1,32})?$/),
   filesScanned: external_exports.number().int().min(0).max(1e7),
   vendors: external_exports.array(slug).max(MANIFEST_LIMITS.vendors),
-  findings: external_exports.array(manifestFinding).max(MANIFEST_LIMITS.findings)
+  findings: external_exports.array(manifestFinding).max(MANIFEST_LIMITS.findings),
+  packages: external_exports.array(manifestPackage).max(MANIFEST_LIMITS.packages).optional()
 });
 
 // src/feed/load.ts
@@ -12746,7 +12765,7 @@ import { join as join2 } from "node:path";
 
 // src/product.ts
 var CLI_NAME = "harbyn";
-var CLI_VERSION = true ? "0.1.1" : "0.0.0-dev";
+var CLI_VERSION = true ? "0.2.0" : "0.0.0-dev";
 
 // src/remote-feed.ts
 var PRODUCTION_KEYS = {
@@ -12934,7 +12953,8 @@ var toJson = (result2) => ({
     line: f.line,
     replacement: f.event.replacement?.targets.flatMap((t) => "values" in t ? t.values : []) ?? [],
     source: f.event.sources[0]?.url ?? null
-  }))
+  })),
+  dependencies: result2.inventory?.dependencies ?? []
 });
 var actionable = (result2) => result2.findings.filter((f) => f.context === "code");
 
@@ -13288,6 +13308,352 @@ var Matcher = class {
   }
 };
 
+// src/inventory.ts
+var INVENTORY_FILES = /* @__PURE__ */ new Set([
+  "package-lock.json",
+  "npm-shrinkwrap.json",
+  "pnpm-lock.yaml",
+  "yarn.lock",
+  "poetry.lock",
+  "uv.lock"
+]);
+var MAX_LOCKFILE_BYTES = 32 * 1024 * 1024;
+var MAX_DEPENDENCIES = 2e4;
+var NPM_NAME = NPM_PACKAGE_NAME;
+var PYPI_NAME = PYPI_PACKAGE_NAME;
+var VERSION2 = PACKAGE_VERSION;
+var PUBLIC_NPM = /^https:\/\/registry\.(?:npmjs\.org|yarnpkg\.com)\//;
+var PUBLIC_PYPI = /^https:\/\/(?:pypi\.org\/simple|pypi\.python\.org\/simple|files\.pythonhosted\.org)\/?/;
+var basename = (path) => path.slice(path.lastIndexOf("/") + 1);
+var dirname = (path) => path.includes("/") ? path.slice(0, path.lastIndexOf("/")) : "";
+var unquote = (s) => s.trim().replace(/^["']|["']$/g, "");
+var normalisePypi = (name) => name.toLowerCase().replace(/[-_.]+/g, "-");
+var npmDirect = (text) => {
+  let json2;
+  try {
+    json2 = JSON.parse(text);
+  } catch {
+    return void 0;
+  }
+  if (typeof json2 !== "object" || json2 === null) return void 0;
+  const names = (key) => {
+    const section = json2[key];
+    return typeof section === "object" && section !== null ? Object.keys(section) : [];
+  };
+  return {
+    prod: /* @__PURE__ */ new Set([
+      ...names("dependencies"),
+      ...names("optionalDependencies"),
+      ...names("peerDependencies")
+    ]),
+    dev: new Set(names("devDependencies"))
+  };
+};
+var fromPackageLock = (text) => {
+  let json2;
+  try {
+    json2 = JSON.parse(text);
+  } catch {
+    return { raws: [] };
+  }
+  const raws = [];
+  const packages = json2.packages;
+  if (typeof packages === "object" && packages !== null) {
+    const root = packages[""];
+    const direct = root ? npmDirect(JSON.stringify(root)) : void 0;
+    for (const [key, value] of Object.entries(packages)) {
+      if (key === "" || typeof value !== "object" || value === null) continue;
+      const at = key.lastIndexOf("node_modules/");
+      const entry = value;
+      if (at === -1 || entry.link === true) {
+        raws.push({ ecosystem: "npm", name: key, version: "0", public: false });
+        continue;
+      }
+      const name = key.slice(at + "node_modules/".length);
+      const resolved = typeof entry.resolved === "string" ? entry.resolved : "";
+      raws.push({
+        ecosystem: "npm",
+        name,
+        version: String(entry.version ?? ""),
+        public: PUBLIC_NPM.test(resolved),
+        dev: entry.dev === true
+      });
+    }
+    return { raws, ...direct ? { direct } : {} };
+  }
+  const walkV1 = (deps, depth) => {
+    if (typeof deps !== "object" || deps === null || depth > 50) return;
+    for (const [name, value] of Object.entries(deps)) {
+      if (typeof value !== "object" || value === null) continue;
+      const entry = value;
+      raws.push({
+        ecosystem: "npm",
+        name,
+        version: String(entry.version ?? ""),
+        public: PUBLIC_NPM.test(String(entry.resolved ?? "")),
+        dev: entry.dev === true
+      });
+      walkV1(entry.dependencies, depth + 1);
+    }
+  };
+  walkV1(json2.dependencies, 0);
+  return { raws };
+};
+var pnpmKey = (key) => {
+  const k = unquote(key).replace(/\(.*$/, "").replace(/^\//, "");
+  const at = k.lastIndexOf("@");
+  if (at > 0) return { name: k.slice(0, at), version: k.slice(at + 1) };
+  const slash = k.lastIndexOf("/");
+  return slash > 0 ? { name: k.slice(0, slash), version: k.slice(slash + 1) } : void 0;
+};
+var fromPnpmLock = (text) => {
+  const raws = [];
+  const direct = { prod: /* @__PURE__ */ new Set(), dev: /* @__PURE__ */ new Set() };
+  const lines2 = text.split(/\r?\n/);
+  let section = "";
+  let importerSection = "";
+  let current;
+  let directName;
+  const flush = () => {
+    if (current) raws.push({ ecosystem: "npm", ...current });
+    current = void 0;
+  };
+  for (const line of lines2) {
+    if (/^\S/.test(line)) {
+      flush();
+      section = line.replace(/:.*$/, "");
+      continue;
+    }
+    const indent = line.length - line.trimStart().length;
+    const trimmed = line.trim();
+    if (trimmed === "" || trimmed.startsWith("#")) continue;
+    if (section === "importers") {
+      if (indent === 4 && trimmed.endsWith(":")) importerSection = trimmed.slice(0, -1);
+      else if (indent === 6 && trimmed.endsWith(":")) directName = unquote(trimmed.slice(0, -1));
+      else if (indent === 6 && trimmed.includes(": ")) {
+        const [name, spec] = trimmed.split(/:\s+/, 2);
+        if (name && spec && !/^(?:link|file|workspace):/.test(unquote(spec)))
+          (importerSection === "devDependencies" ? direct.dev : direct.prod).add(unquote(name));
+      } else if (indent === 8 && directName && trimmed.startsWith("version:")) {
+        if (!/^(?:link|file|workspace):/.test(unquote(trimmed.slice(8))))
+          (importerSection === "devDependencies" ? direct.dev : direct.prod).add(directName);
+        directName = void 0;
+      }
+    } else if (section === "packages") {
+      if (indent === 2 && trimmed.endsWith(":")) {
+        flush();
+        const parsed = pnpmKey(trimmed.slice(0, -1));
+        current = parsed ? { ...parsed, public: !/[:@](?:https?:|git|file:|link:)/.test(trimmed) } : void 0;
+      } else if (current && /^resolution:/.test(trimmed) && /tarball:|directory:|repo:|commit:/.test(trimmed)) {
+        current.public = false;
+      } else if (current && trimmed === "dev: true") {
+        current.dev = true;
+      }
+    }
+  }
+  flush();
+  return { raws, direct };
+};
+var fromYarnLock = (text) => {
+  const raws = [];
+  let header;
+  let version2 = "";
+  let origin = "";
+  const flush = () => {
+    if (header && header !== "__metadata") {
+      const first = unquote(header.split(",")[0] ?? "");
+      const at = first.lastIndexOf("@");
+      const name = at > 0 ? first.slice(0, at) : first;
+      const isPublic = PUBLIC_NPM.test(origin) || /@npm:\d/.test(origin) && !/@(?:patch|workspace|link|portal|file|git|exec):/.test(origin);
+      raws.push({ ecosystem: "npm", name, version: version2, public: isPublic });
+    }
+    header = void 0;
+    version2 = "";
+    origin = "";
+  };
+  for (const line of text.split(/\r?\n/)) {
+    if (line.trim() === "" || line.startsWith("#")) continue;
+    if (/^\S.*:$/.test(line)) {
+      flush();
+      header = line.slice(0, -1);
+      continue;
+    }
+    const m = /^\s+(version|resolved|resolution):?\s+"?([^"]*)"?\s*$/.exec(line);
+    if (!m) continue;
+    if (m[1] === "version") version2 = m[2];
+    else origin = m[2];
+  }
+  flush();
+  return raws;
+};
+var fromPythonLock = (text, kind) => {
+  const raws = [];
+  let rootDirect;
+  const blocks = text.split(/^\[\[package\]\]\s*$/m).slice(1);
+  for (const block of blocks) {
+    const name = /^name\s*=\s*"([^"]+)"/m.exec(block)?.[1];
+    const version2 = /^version\s*=\s*"([^"]+)"/m.exec(block)?.[1];
+    if (!name) continue;
+    if (kind === "uv") {
+      const source2 = /^source\s*=\s*\{([^}]*)\}/m.exec(block)?.[1] ?? "";
+      if (/virtual\s*=|editable\s*=/.test(source2)) {
+        const deps = /^dependencies\s*=\s*\[([\s\S]*?)^\]/m.exec(block)?.[1] ?? "";
+        rootDirect = new Set(
+          [...deps.matchAll(/name\s*=\s*"([^"]+)"/g)].map((m) => normalisePypi(m[1]))
+        );
+        continue;
+      }
+      const registry2 = /registry\s*=\s*"([^"]+)"/.exec(source2)?.[1] ?? "";
+      raws.push({
+        ecosystem: "pypi",
+        name,
+        version: version2 ?? "",
+        public: PUBLIC_PYPI.test(registry2)
+      });
+    } else {
+      const source2 = /^\[package\.source\]([\s\S]*?)(?=^\[|$(?![\s\S]))/m.exec(block)?.[1];
+      raws.push({ ecosystem: "pypi", name, version: version2 ?? "", public: source2 === void 0 });
+    }
+  }
+  return { raws, ...rootDirect ? { rootDirect } : {} };
+};
+var pyprojectDirect = (text) => {
+  const names = /* @__PURE__ */ new Set();
+  const list = /^dependencies\s*=\s*\[([\s\S]*?)\]/m.exec(text)?.[1] ?? "";
+  for (const m of list.matchAll(/"([A-Za-z0-9][A-Za-z0-9._-]*)/g))
+    names.add(normalisePypi(m[1]));
+  for (const table of text.matchAll(
+    /^\[tool\.poetry(?:\.group\.[^\]]+)?\.(?:dev-)?dependencies\]([\s\S]*?)(?=^\[|$(?![\s\S]))/gm
+  )) {
+    for (const m of table[1].matchAll(/^([A-Za-z0-9][A-Za-z0-9._-]*)\s*=/gm))
+      if (m[1] !== "python") names.add(normalisePypi(m[1]));
+  }
+  return names;
+};
+var fromRequirements = (text) => {
+  const raws = [];
+  const privateIndex = /^\s*(?:-i|--index-url|--extra-index-url|--find-links|-f)\b/m.test(text) && !/^\s*(?:-i|--index-url)\s+https:\/\/pypi\.org\/simple\/?\s*$/m.test(text);
+  for (const raw of text.split(/\r?\n/)) {
+    const line = raw.replace(/\s+#.*$/, "").trim();
+    if (line === "" || line.startsWith("#") || line.startsWith("-")) continue;
+    const m = /^([A-Za-z0-9][A-Za-z0-9._-]*)(?:\[[^\]]*\])?\s*==\s*([0-9][0-9A-Za-z.+_-]*)\s*(?:;.*)?$/.exec(
+      line
+    );
+    if (m)
+      raws.push({
+        ecosystem: "pypi",
+        name: m[1],
+        version: m[2],
+        public: !privateIndex
+      });
+    else if (/(?:^|\s)(?:git\+|https?:|file:|\.\/|\/)|\s@\s/.test(line))
+      raws.push({ ecosystem: "pypi", name: "local", version: "0", public: false });
+  }
+  return raws;
+};
+var InventoryCollector = class {
+  raws = /* @__PURE__ */ new Map();
+  npmDirectByDir = /* @__PURE__ */ new Map();
+  pyDirectByDir = /* @__PURE__ */ new Map();
+  pending = [];
+  files = [];
+  nonPublic = 0;
+  invalid = 0;
+  add(path, text) {
+    const name = basename(path);
+    const dir = dirname(path);
+    if (name === "package.json") {
+      const direct = npmDirect(text);
+      if (direct) this.npmDirectByDir.set(dir, direct);
+      return;
+    }
+    if (name === "pyproject.toml") {
+      this.pyDirectByDir.set(dir, pyprojectDirect(text));
+      return;
+    }
+    if (name === "package-lock.json" || name === "npm-shrinkwrap.json") {
+      const parsed = fromPackageLock(text);
+      this.pending.push({
+        dir,
+        raws: parsed.raws,
+        ...parsed.direct ? { direct: parsed.direct } : {}
+      });
+    } else if (name === "pnpm-lock.yaml") {
+      const parsed = fromPnpmLock(text);
+      this.pending.push({ dir, raws: parsed.raws, direct: parsed.direct });
+    } else if (name === "yarn.lock") {
+      this.pending.push({ dir, raws: fromYarnLock(text) });
+    } else if (name === "poetry.lock" || name === "uv.lock") {
+      const parsed = fromPythonLock(text, name === "uv.lock" ? "uv" : "poetry");
+      this.pending.push({
+        dir,
+        raws: parsed.raws,
+        ...parsed.rootDirect ? { pyDirect: parsed.rootDirect } : {}
+      });
+    } else if (/^requirements(?:[-_.][A-Za-z0-9_-]+)?\.txt$/.test(name)) {
+      this.pending.push({
+        dir,
+        raws: fromRequirements(text).map((r) => ({ ...r, dev: /dev|test/i.test(name) })),
+        pyDirect: /* @__PURE__ */ new Set(["*"])
+      });
+    } else {
+      return;
+    }
+    this.files.push(path);
+  }
+  result() {
+    for (const { dir, raws, direct, pyDirect } of this.pending) {
+      const npmDirect2 = direct ?? this.npmDirectByDir.get(dir);
+      const pyDirectSet = pyDirect ?? this.pyDirectByDir.get(dir);
+      for (const raw of raws) {
+        if (!raw.public) {
+          this.nonPublic++;
+          continue;
+        }
+        const name = raw.ecosystem === "pypi" ? normalisePypi(raw.name) : raw.name;
+        if (!(raw.ecosystem === "npm" ? NPM_NAME : PYPI_NAME).test(name) || !VERSION2.test(raw.version)) {
+          this.invalid++;
+          continue;
+        }
+        const isDirect = raw.ecosystem === "npm" ? !!npmDirect2 && (npmDirect2.prod.has(name) || npmDirect2.dev.has(name)) : !!pyDirectSet && (pyDirectSet.has("*") || pyDirectSet.has(name));
+        const dev = raw.ecosystem === "npm" && npmDirect2?.dev.has(name) && !npmDirect2.prod.has(name) ? true : raw.dev === true;
+        const key = `${raw.ecosystem} ${name} ${raw.version}`;
+        const seen = this.raws.get(key);
+        if (seen) {
+          seen.direct = seen.direct || isDirect;
+          seen.dev = seen.dev === true && dev;
+          continue;
+        }
+        if (this.raws.size >= MAX_DEPENDENCIES) break;
+        this.raws.set(key, {
+          ecosystem: raw.ecosystem,
+          name,
+          version: raw.version,
+          public: true,
+          direct: isDirect,
+          dev
+        });
+      }
+    }
+    this.pending.length = 0;
+    const dependencies = [...this.raws.values()].map(({ ecosystem: ecosystem2, name, version: version2, direct, dev }) => ({
+      ecosystem: ecosystem2,
+      name,
+      version: version2,
+      direct,
+      dev: dev === true
+    })).sort(
+      (a, b) => a.ecosystem.localeCompare(b.ecosystem) || a.name.localeCompare(b.name) || a.version.localeCompare(b.version)
+    );
+    return {
+      dependencies,
+      files: [...this.files].sort(),
+      skippedNonPublic: this.nonPublic,
+      skippedInvalid: this.invalid
+    };
+  }
+};
+
 // src/walk.ts
 import { existsSync as existsSync2, lstatSync as lstatSync2, readdirSync as readdirSync2, readFileSync as readFileSync3 } from "node:fs";
 import { join as join3 } from "node:path";
@@ -13490,6 +13856,13 @@ function* walk(root, stats, options = {}) {
         stats.skippedSecret++;
         continue;
       }
+      if (options.onLockfile && INVENTORY_FILES.has(name) && stat.size > 0 && stat.size <= MAX_LOCKFILE_BYTES && !rules.ignores(rel, false)) {
+        try {
+          options.onLockfile({ path: rel, text: readFileSync3(full, "utf8") });
+        } catch {
+        }
+        continue;
+      }
       if (LOCKFILES.has(name) || SKIP_EXT.test(name) || stat.size > MAX_FILE_BYTES2 || stat.size === 0)
         continue;
       if (rules.ignores(rel, false)) {
@@ -13519,11 +13892,19 @@ var scan = (root, feed2, options = {}) => {
   const findings = [];
   const usage = /* @__PURE__ */ new Map();
   const matcher = new Matcher(feed2);
-  for (const file2 of walk(root, stats, options)) matcher.scanFile(file2, findings, usage);
+  const inventory2 = new InventoryCollector();
+  for (const file2 of walk(root, stats, {
+    ...options,
+    onLockfile: (lock) => inventory2.add(lock.path, lock.text)
+  })) {
+    matcher.scanFile(file2, findings, usage);
+    inventory2.add(file2.path, file2.text);
+  }
   return {
     findings,
     usage: [...usage.values()].sort((a, b) => a.vendor.id.localeCompare(b.vendor.id)),
-    stats
+    stats,
+    inventory: inventory2.result()
   };
 };
 
@@ -13531,7 +13912,7 @@ var scan = (root, feed2, options = {}) => {
 var INGEST_URL = "https://api.harbyn.com/ingest/manifest";
 var OIDC_AUDIENCE = "https://api.harbyn.com";
 var CONNECTION_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
-var toManifest = (result2, scannerVersion) => {
+var toManifest = (result2, scannerVersion, options = {}) => {
   const groups = /* @__PURE__ */ new Map();
   const vendors = new Set(result2.usage.map((u) => u.vendor.id));
   for (const f of result2.findings) {
@@ -13558,7 +13939,16 @@ var toManifest = (result2, scannerVersion) => {
     scanner: scannerVersion,
     filesScanned: result2.stats.scanned,
     vendors: [...vendors].sort().slice(0, MANIFEST_LIMITS.vendors),
-    findings
+    findings,
+    ...options.inventory && result2.inventory ? {
+      packages: [...result2.inventory.dependencies].sort((a, b) => Number(b.direct) - Number(a.direct)).slice(0, MANIFEST_LIMITS.packages).map(({ ecosystem: ecosystem2, name, version: version2, direct, dev }) => ({
+        ecosystem: ecosystem2,
+        name,
+        version: version2,
+        direct,
+        dev
+      }))
+    } : {}
   });
 };
 var requestOidcToken = async (env, fetcher) => {
@@ -13641,6 +14031,10 @@ if (upload !== "true" && upload !== "false") fail("upload must be 'true' or 'fal
 var connection = input2("connection").toLowerCase();
 if (upload === "true" && !CONNECTION_ID.test(connection))
   fail("upload needs the connection id shown in your Harbyn dashboard (Repositories)");
+var inventory = (input2("inventory") || "false").toLowerCase();
+if (inventory !== "true" && inventory !== "false") fail("inventory must be 'true' or 'false'");
+if (inventory === "true" && upload !== "true")
+  fail("inventory needs upload: true (it only decides what the upload includes)");
 var onUploadError = input2("on-upload-error") || "warn";
 if (onUploadError !== "warn" && onUploadError !== "fail")
   fail("on-upload-error must be 'warn' or 'fail'");
@@ -13686,7 +14080,10 @@ console.log(
 if (upload === "true") {
   let outcome;
   try {
-    const body = uploadBody(connection, toManifest(result, CLI_VERSION));
+    const body = uploadBody(
+      connection,
+      toManifest(result, CLI_VERSION, { inventory: inventory === "true" })
+    );
     if (process.env.GITHUB_STEP_SUMMARY) {
       const pretty = JSON.stringify(JSON.parse(body), null, 2);
       appendFileSync(

@@ -30,6 +30,10 @@ inputs:
     description: The connection id shown in your Harbyn dashboard (Repositories) for this repository. Used only with upload.
     required: false
     default: ""
+  inventory:
+    description: "'false' (default). 'true' adds the dependency list to the upload: ecosystem, name, exact version, direct, dev, for public-registry packages only (private, workspace, link and git entries are never sent). Needs upload."
+    required: false
+    default: "false"
   on-upload-error:
     description: "When the upload fails the scan still completes. 'warn' (default) leaves the step green with a warning; 'fail' fails it."
     required: false

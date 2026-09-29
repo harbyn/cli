@@ -2,7 +2,29 @@ import { z } from "zod";
 import type { ChangeEvent } from "./change-event.ts";
 import { literalToken, slug } from "./primitives.ts";
 
-export const MANIFEST_LIMITS = { findings: 1000, vendors: 200, count: 100_000 } as const;
+export const MANIFEST_LIMITS = {
+  findings: 1000,
+  vendors: 200,
+  count: 100_000,
+  packages: 5000,
+} as const;
+
+export const NPM_PACKAGE_NAME = /^(?:@[a-z0-9][a-z0-9._~-]{0,100}\/)?[a-z0-9][a-z0-9._~-]{0,213}$/;
+export const PYPI_PACKAGE_NAME = /^[a-z0-9](?:[a-z0-9-]{0,98}[a-z0-9])?$/;
+export const PACKAGE_VERSION = /^[0-9][0-9A-Za-z.+_-]{0,63}$/;
+
+export const manifestPackage = z
+  .strictObject({
+    ecosystem: z.enum(["npm", "pypi"]),
+    name: z.string().max(214),
+    version: z.string().regex(PACKAGE_VERSION),
+    direct: z.boolean(),
+    dev: z.boolean(),
+  })
+  .refine(
+    (p) => (p.ecosystem === "npm" ? NPM_PACKAGE_NAME : PYPI_PACKAGE_NAME).test(p.name),
+    "not a public package name",
+  );
 
 const eventId = z
   .string()
@@ -23,10 +45,12 @@ export const repoManifest = z.strictObject({
   filesScanned: z.number().int().min(0).max(10_000_000),
   vendors: z.array(slug).max(MANIFEST_LIMITS.vendors),
   findings: z.array(manifestFinding).max(MANIFEST_LIMITS.findings),
+  packages: z.array(manifestPackage).max(MANIFEST_LIMITS.packages).optional(),
 });
 
 export type RepoManifest = z.infer<typeof repoManifest>;
 export type ManifestFinding = z.infer<typeof manifestFinding>;
+export type ManifestPackage = z.infer<typeof manifestPackage>;
 
 const identifiersOf = (event: ChangeEvent): Set<string> =>
   new Set(event.affects.flatMap((a) => ("values" in a ? a.values : [])));
