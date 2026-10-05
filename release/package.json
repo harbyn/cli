@@ -1,0 +1,29 @@
+{
+  "name": "harbyn",
+  "version": "0.6.0",
+  "description": "Finds where your code will break when a vendor retires a model, an API version or an endpoint. Read-only; nothing about your code leaves your machine.",
+  "license": "Apache-2.0",
+  "homepage": "https://harbyn.com",
+  "type": "module",
+  "bin": {
+    "harbyn": "harbyn.mjs"
+  },
+  "files": [
+    "harbyn.mjs",
+    "README.md",
+    "LICENSE",
+    "THIRD_PARTY_NOTICES.md"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
+  "keywords": [
+    "deprecation",
+    "breaking-changes",
+    "api",
+    "llm",
+    "models",
+    "scanner",
+    "ci"
+  ]
+}

@@ -1,0 +1,76 @@
+name: Harbyn scan
+description: Marks the lines that a vendor's upcoming change will break (retired models, API versions, endpoints). Read-only; by default nothing leaves the runner.
+author: Harbyn
+branding:
+  icon: alert-triangle
+  color: blue
+
+inputs:
+  path:
+    description: Directory to scan, relative to the repository root.
+    required: false
+    default: "."
+  ignore:
+    description: Extra ignore patterns (.gitignore syntax), one per line. .gitignore and .harbynignore are always honoured.
+    required: false
+    default: ""
+  fail-on:
+    description: "'none' (default) only annotates; 'findings' also fails the step when code is affected."
+    required: false
+    default: none
+  on-feed-error:
+    description: "When the change feed cannot be verified nothing is reported. 'warn' (default) leaves the step green with a warning; 'fail' fails it."
+    required: false
+    default: warn
+  upload:
+    description: "'false' (default) keeps everything on the runner. 'true' also sends the scan to your Harbyn dashboard: feed terms and counts only, no paths, lines or code, printed in the job summary first. Needs `permissions: id-token: write` and `connection`."
+    required: false
+    default: "false"
+  connection:
+    description: The connection id shown in your Harbyn dashboard (Repositories) for this repository. Used with upload and remediate.
+    required: false
+    default: ""
+  inventory:
+    description: "'false' (default). 'true' adds the dependency list to the upload: ecosystem, name, exact version, direct, dev, for public-registry packages only (private, workspace, link and git entries are never sent). Needs upload."
+    required: false
+    default: "false"
+  remediate:
+    description: "'false' (default). 'true' opens pull requests that fix what the scan found, on push, schedule or workflow_dispatch runs (Harbyn Pro and Team, https://harbyn.com/pricing). This open Action downloads the paid fix engine from Harbyn, verifies its signature against the key pinned in its own source, and only then runs it on this runner; your code never leaves it. Needs `connection` and `permissions: id-token: write, contents: write, pull-requests: write`."
+    required: false
+    default: "false"
+  llm-provider:
+    description: "Optional, with remediate: 'anthropic', 'openai' or 'openrouter'. A model of your choice, with your own key, proposes the fixes a reviewed recipe cannot make. Every edit is validated; payments, auth, crypto and CI code is only reported."
+    required: false
+    default: ""
+  llm-model:
+    description: Optional, with remediate and llm-provider. The model id at that provider.
+    required: false
+    default: ""
+  llm-api-key:
+    description: Optional, with remediate and llm-provider. Your key for that provider, from a repository secret. Sent only to the provider's fixed address, never to Harbyn.
+    required: false
+    default: ""
+  github-token:
+    description: The token remediate opens its pull requests with (the job's own token by default). Never sent to Harbyn.
+    required: false
+    default: ${{ github.token }}
+  on-upload-error:
+    description: "When the upload fails the scan still completes. 'warn' (default) leaves the step green with a warning; 'fail' fails it."
+    required: false
+    default: warn
+  feed-dir:
+    description: Development only. Reads an unsigned feed from a directory in the repository instead of downloading the signed feed.
+    required: false
+    default: ""
+
+outputs:
+  findings:
+    description: Number of affected lines in code (empty when the feed could not be verified).
+  report:
+    description: Path of the full JSON report on the runner.
+  pull-requests:
+    description: The pull requests remediate opened or found open, space-separated.
+
+runs:
+  using: node24
+  main: dist/action/harbyn-action.mjs
