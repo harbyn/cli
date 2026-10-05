@@ -1,9 +1,16 @@
 {
   "name": "harbyn",
-  "version": "0.7.0",
+  "version": "0.7.1",
   "description": "Finds where your code will break when a vendor retires a model, an API version or an endpoint. Read-only; nothing about your code leaves your machine.",
   "license": "Apache-2.0",
   "homepage": "https://harbyn.com",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/harbyn/cli.git"
+  },
+  "bugs": {
+    "url": "https://github.com/harbyn/cli/issues"
+  },
   "type": "module",
   "bin": {
     "harbyn": "harbyn.mjs"

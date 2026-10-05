@@ -12857,7 +12857,7 @@ import { join as join2 } from "node:path";
 
 // src/product.ts
 var CLI_NAME = "harbyn";
-var CLI_VERSION = true ? "0.7.0" : "0.0.0-dev";
+var CLI_VERSION = true ? "0.7.1" : "0.0.0-dev";
 var PAID_FIX_MESSAGE = `Automatic fixes and SDK migrations are part of Harbyn Pro and Team.
 Switch them on for a repository from the dashboard, no terminal needed: https://harbyn.com/pricing
 This open-source CLI finds what will break and where: run \`${CLI_NAME} scan\`.`;

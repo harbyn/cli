@@ -128,6 +128,13 @@ beforeAll(() => {
 }, 180_000);
 
 describe("published package", () => {
+  it("names its source repository, which npm checks against the provenance of the build", () => {
+    const manifest = JSON.parse(readFileSync(join(root, "release", "package.json"), "utf8")) as {
+      repository?: { url?: string };
+    };
+    expect(manifest.repository?.url).toBe("git+https://github.com/harbyn/cli.git");
+  });
+
   it("contains exactly the files we mean to ship", () => {
     expect(packedFiles).toEqual([
       "LICENSE",
