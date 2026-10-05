@@ -101,4 +101,4 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: gh attestation verify out/harbyn-*.tgz --repo "$GITHUB_REPOSITORY" --signer-workflow "$GITHUB_REPOSITORY/.github/workflows/release.yml"
-      - run: npm publish out/harbyn-*.tgz --provenance --access public
+      - run: npm publish ./out/harbyn-*.tgz --provenance --access public

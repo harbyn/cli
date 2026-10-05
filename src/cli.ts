@@ -1,6 +1,7 @@
 import { resolve } from "node:path";
 import { FeedVerificationError } from "./feed/index.ts";
 import { config } from "zod";
+import { banner, showsBanner } from "./banner.ts";
 import { loadEngine } from "./engine.ts";
 import { getFeed } from "./feed-source.ts";
 import { actionable, scan, toDependencyText, toJson, toText } from "./index.ts";
@@ -81,7 +82,15 @@ if (command === "fix" || command === "migrate") {
   console.log(PAID_FIX_MESSAGE);
   process.exit(0);
 }
-if (flag("--help") || flag("-h") || command !== "scan") {
+const terminal = {
+  isTTY: Boolean(process.stdout.isTTY),
+  env: process.env,
+  platform: process.platform,
+};
+const help = flag("--help") || flag("-h");
+if ((help || command === "scan") && showsBanner(terminal, flag("--json")))
+  console.log(banner(terminal));
+if (help || command !== "scan") {
   console.log(USAGE);
   process.exit(flag("--help") || flag("-h") ? 0 : 2);
 }
