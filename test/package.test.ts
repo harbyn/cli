@@ -331,11 +331,22 @@ describe.each(["CLI", "action"])("%s bundle contents", (which) => {
     const engine = [
       "https://api.harbyn.com",
       "https://api.harbyn.com/ingest/engine",
+      "https://api.harbyn.com/cli/engine",
       "https://feed.harbyn.com/v1/engine-release.json",
+    ];
+    const login = [
+      "https://api.harbyn.com/cli",
+      "https://app.harbyn.com/cli",
+      "https://harbyn.com/docs",
     ];
     const expected =
       which === "CLI"
-        ? ["https://feed.harbyn.com/v1/feed.json", "https://harbyn.com/pricing", ...engine]
+        ? [
+            "https://feed.harbyn.com/v1/feed.json",
+            "https://harbyn.com/pricing",
+            ...engine,
+            ...login,
+          ]
         : [
             "https://api.harbyn.com/ingest/manifest",
             "https://feed.harbyn.com/v1/feed.json",

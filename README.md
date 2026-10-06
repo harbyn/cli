@@ -102,21 +102,46 @@ job's own token; Harbyn never holds write access to your repository. With `remed
 a workflow with `HARBYN_CONNECTION` set) this open-source code:
 
 1. asks the runner for a GitHub OIDC token (`permissions: id-token: write`) and sends it with your connection id, and
-   nothing else, to `https://api.harbyn.com/ingest/engine`;
-2. receives the fix engine and its migration recipes;
+   nothing else, to `https://api.harbyn.com/ingest/engine` (plus, when the workflow keeps the engine between runs, the
+   SHA-256 of the copy it kept, so the same bytes are not sent again);
+2. receives the fix engine and its migration recipes, or "cached" when the kept copy is the current release;
 3. downloads the release manifest from `https://feed.harbyn.com/v1/engine-release.json`, checks its signature against
    the engine key pinned in `src/engine.ts` (separate from the feed key), its expiry, and the SHA-256 and size of both
    files;
 4. only then runs the engine on the runner. If any check fails it runs nothing, prints a warning, and the scan result
    stands.
 
+To keep the engine between runs (about 10 MB less per run), restore and save the runner's `harbyn-engine-cache`
+directory around the Action with `actions/cache/restore` and `actions/cache/save`, keyed by the Action's
+`engine-cache-key` output; the dashboard writes this workflow for you. A kept copy goes through step 3 like a
+downloaded one: a changed cache fails verification and never runs. With `upload: true`, the upload also says whether
+the repository let the fix open pull requests (see `docs/upload.md`), so the dashboard can tell you when GitHub's
+"Allow GitHub Actions to create and approve pull requests" is off.
+
 The engine is closed source and requires a paid plan. On a free plan the Action prints where to upgrade and opens
-nothing. Outside CI, `harbyn fix` and `harbyn migrate` print the same.
+nothing.
+
+### On your machine: `harbyn login`
+
+```sh
+npx harbyn login          # sign this CLI in from your browser (device code, no password in the terminal)
+npx harbyn fix            # show the fixes the paid engine makes here
+npx harbyn fix --write    # apply them to your files; review them with your own git
+npx harbyn logout         # sign out, and revoke the sign-in
+```
+
+`login` prints a page and a code; approve the code on that page while signed in to Harbyn. The sign-in it saves
+(`credentials.json` in `%APPDATA%\harbyn`, `$XDG_CONFIG_HOME/harbyn` or `~/.config/harbyn`, readable by you only) can
+only fetch the engine, say whose it is, and revoke itself; it cannot read or change your account. Settings > Command
+line in the dashboard lists every sign-in with its last use and signs any of them out. `fix` and `migrate` then fetch
+the engine from `https://api.harbyn.com/cli/engine` with that sign-in, verify it exactly as above, and run it here:
+nothing about your code leaves your machine. `scan` never reads the sign-in.
 
 ## What it does and does not do
 
-- It never writes to your project. The only file it writes is its feed cache (`%LOCALAPPDATA%\harbyn`,
-  `$XDG_CACHE_HOME/harbyn` or `~/.cache/harbyn`).
+- `scan` never writes to your project. The only file it writes is its feed cache (`%LOCALAPPDATA%\harbyn`,
+  `$XDG_CACHE_HOME/harbyn` or `~/.cache/harbyn`). Only `fix --write`, which you run on purpose after `login`, edits
+  your files; `login` writes its sign-in to your config directory.
 - A scan makes one network request: the change feed from `https://feed.harbyn.com/v1/feed.json` and its signature.
   There is no telemetry.
 - `.env` files (except `.env.example` and similar), private keys, `.npmrc`, `.netrc` and credential files are skipped

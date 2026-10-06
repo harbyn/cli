@@ -2,7 +2,7 @@ import { appendFileSync, realpathSync, writeFileSync } from "node:fs";
 import { isAbsolute, join, relative, resolve, sep } from "node:path";
 import { FeedVerificationError } from "./feed/index.ts";
 import { config } from "zod";
-import { loadEngine } from "./engine.ts";
+import { ENGINE_CACHE_DIR, type FixReport, loadEngine } from "./engine.ts";
 import { getFeed } from "./feed-source.ts";
 import { mdText, toAnnotations, toStepSummary, workflowCommand } from "./github.ts";
 import { actionable, scan, toJson } from "./index.ts";
@@ -78,6 +78,18 @@ const now = new Date();
 const today = now.toISOString().slice(0, 10);
 const feedDir = input("feed-dir");
 
+const isFixReport = (value: unknown): value is FixReport => {
+  const r = value as Partial<FixReport> | null | undefined;
+  return (
+    typeof r === "object" &&
+    r !== null &&
+    ["allowed", "blocked", "unknown"].includes(String(r.pullRequests)) &&
+    Number.isInteger(r.opened) &&
+    (r.opened as number) >= 0 &&
+    (r.opened as number) <= 100
+  );
+};
+
 const writeOutput = (name: string, value: string): void => {
   if (process.env.GITHUB_OUTPUT) appendFileSync(process.env.GITHUB_OUTPUT, `${name}=${value}\n`);
 };
@@ -119,12 +131,59 @@ console.log(
   `${count} affected ${count === 1 ? "line" : "lines"}, ${result.stats.scanned} ${result.stats.scanned === 1 ? "file" : "files"} scanned.`,
 );
 
+let fixes: FixReport | undefined;
+let fixError: string | undefined;
+if (remediate === "true") {
+  let token = "";
+  try {
+    token = await requestOidcToken(process.env, fetch);
+  } catch (error) {
+    console.log(workflowCommand("warning", CLI_NAME, `no fixes: ${(error as Error).message}`));
+  }
+  const loaded = token
+    ? await loadEngine({
+        auth: { kind: "ci", connection, token },
+        dir: process.env.RUNNER_TEMP ?? workspace,
+        fetch,
+        cacheDir: join(process.env.RUNNER_TEMP ?? workspace, ENGINE_CACHE_DIR),
+      })
+    : { ok: false as const, message: "" };
+  if (loaded.ok && loaded.fresh) writeOutput("engine-cache-key", loaded.engineSha256.slice(0, 16));
+  if (loaded.ok) {
+    try {
+      const report = await loaded.engine.runAction({
+        result,
+        feed,
+        knowledge: loaded.knowledge,
+        target,
+        githubToken: input("github-token"),
+        llm,
+        workflowCommand,
+        writeOutput,
+      });
+      fixes = isFixReport(report) ? report : { pullRequests: "unknown", opened: 0 };
+    } catch (error) {
+      fixError = (error as Error).message;
+    }
+  } else if (loaded.message) {
+    console.log(
+      workflowCommand(
+        "warning",
+        CLI_NAME,
+        `no fixes: ${loaded.message}. The scan above is complete.`,
+      ),
+    );
+  }
+}
 if (upload === "true") {
   let outcome: { ok: boolean; message: string };
   try {
     const body = uploadBody(
       connection,
-      toManifest(result, CLI_VERSION, { inventory: inventory === "true" }),
+      toManifest(result, CLI_VERSION, {
+        inventory: inventory === "true",
+        ...(fixes ? { fixes } : {}),
+      }),
     );
     if (process.env.GITHUB_STEP_SUMMARY) {
       const pretty = JSON.stringify(JSON.parse(body), null, 2);
@@ -156,39 +215,5 @@ ${pretty}
       ),
     );
 }
-if (remediate === "true") {
-  let token = "";
-  try {
-    token = await requestOidcToken(process.env, fetch);
-  } catch (error) {
-    console.log(workflowCommand("warning", CLI_NAME, `no fixes: ${(error as Error).message}`));
-  }
-  const loaded = token
-    ? await loadEngine({ connection, token, dir: process.env.RUNNER_TEMP ?? workspace, fetch })
-    : { ok: false as const, message: "" };
-  if (loaded.ok) {
-    try {
-      await loaded.engine.runAction({
-        result,
-        feed,
-        knowledge: loaded.knowledge,
-        target,
-        githubToken: input("github-token"),
-        llm,
-        workflowCommand,
-        writeOutput,
-      });
-    } catch (error) {
-      fail(`fixes: ${(error as Error).message}`);
-    }
-  } else if (loaded.message) {
-    console.log(
-      workflowCommand(
-        "warning",
-        CLI_NAME,
-        `no fixes: ${loaded.message}. The scan above is complete.`,
-      ),
-    );
-  }
-}
+if (fixError !== undefined) fail(`fixes: ${fixError}`);
 process.exit(failOn === "findings" && count > 0 ? 1 : 0);

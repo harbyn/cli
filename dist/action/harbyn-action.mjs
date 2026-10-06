@@ -12689,7 +12689,11 @@ var repoManifest = external_exports.strictObject({
   filesScanned: external_exports.number().int().min(0).max(1e7),
   vendors: external_exports.array(slug).max(MANIFEST_LIMITS.vendors),
   findings: external_exports.array(manifestFinding).max(MANIFEST_LIMITS.findings),
-  packages: external_exports.array(manifestPackage).max(MANIFEST_LIMITS.packages).optional()
+  packages: external_exports.array(manifestPackage).max(MANIFEST_LIMITS.packages).optional(),
+  fixes: external_exports.strictObject({
+    pullRequests: external_exports.enum(["allowed", "blocked", "unknown"]),
+    opened: external_exports.number().int().min(0).max(100)
+  }).optional()
 });
 
 // src/feed/load.ts
@@ -12846,7 +12850,17 @@ var verifiedJson = (bytes, envelopeJson, trustedKeys, message = bytes) => {
 };
 
 // src/engine.ts
-import { mkdtempSync, writeFileSync as writeFileSync2 } from "node:fs";
+import { createHash as createHash2, randomBytes } from "node:crypto";
+import {
+  lstatSync as lstatSync2,
+  mkdirSync as mkdirSync2,
+  mkdtempSync,
+  readFileSync as readFileSync3,
+  renameSync as renameSync2,
+  rmSync,
+  writeFileSync as writeFileSync2
+} from "node:fs";
+import { dirname } from "node:path";
 import { join as join3 } from "node:path";
 import { pathToFileURL } from "node:url";
 
@@ -12857,7 +12871,7 @@ import { join as join2 } from "node:path";
 
 // src/product.ts
 var CLI_NAME = "harbyn";
-var CLI_VERSION = true ? "0.7.1" : "0.0.0-dev";
+var CLI_VERSION = true ? "0.8.0" : "0.0.0-dev";
 var PAID_FIX_MESSAGE = `Automatic fixes and SDK migrations are part of Harbyn Pro and Team.
 Switch them on for a repository from the dashboard, no terminal needed: https://harbyn.com/pricing
 This open-source CLI finds what will break and where: run \`${CLI_NAME} scan\`.`;
@@ -12978,10 +12992,28 @@ var ENGINE_KEYS = {
   "2813f379542269f5": "MCowBQYDK2VwAyEAvAc5oM0tUCruFHByBrDd0xPhndNvMI4xgTCgZZzS/mg="
 };
 var ENGINE_URL = "https://api.harbyn.com/ingest/engine";
+var CLI_ENGINE_URL = "https://api.harbyn.com/cli/engine";
+var ENGINE_CACHE_DIR = "harbyn-engine-cache";
 var ENGINE_RELEASE_URL = "https://feed.harbyn.com/v1/engine-release.json";
 var MAX_RESPONSE_BYTES = 32 * 1024 * 1024;
 var MAX_RELEASE_BYTES = 4096;
 var MAX_MESSAGE_CHARS = 300;
+var CACHE_ENGINE = "harbyn-engine.mjs";
+var CACHE_KNOWLEDGE = "engine-knowledge.json";
+var sha2562 = (bytes) => createHash2("sha256").update(bytes).digest("hex");
+var readCache2 = (dir) => {
+  try {
+    const files = [join3(dir, CACHE_ENGINE), join3(dir, CACHE_KNOWLEDGE)];
+    if (!files.every((f) => lstatSync2(f).isFile() && lstatSync2(f).size <= MAX_RESPONSE_BYTES))
+      return void 0;
+    return {
+      engine: readFileSync3(files[0]),
+      knowledge: readFileSync3(files[1])
+    };
+  } catch {
+    return void 0;
+  }
+};
 var displayText2 = (text) => typeof text === "string" ? [...text].filter((ch) => {
   const code = ch.codePointAt(0) ?? 0;
   return code >= 32 && code <= 126;
@@ -13005,16 +13037,22 @@ var loadEngine = async (options) => {
       message: "automatic fixes are not available in this release of the Action yet"
     };
   const download = options.download ?? httpsDownload;
+  const cache = options.cacheDir ? readCache2(options.cacheDir) : void 0;
+  const have = cache ? { engine: sha2562(cache.engine), knowledge: sha2562(cache.knowledge) } : void 0;
   try {
-    const res = await options.fetch(ENGINE_URL, {
+    const ci = options.auth.kind === "ci";
+    const res = await options.fetch(ci ? ENGINE_URL : CLI_ENGINE_URL, {
       method: "POST",
       redirect: "error",
       headers: {
-        authorization: `Bearer ${options.token}`,
+        authorization: `Bearer ${options.auth.token}`,
         "content-type": "application/json",
         accept: "application/json"
       },
-      body: JSON.stringify({ connection: options.connection }),
+      body: JSON.stringify({
+        ...options.auth.kind === "ci" ? { connection: options.auth.connection } : {},
+        ...have ? { have } : {}
+      }),
       signal: AbortSignal.timeout(6e4)
     });
     const body = await readCapped(res, MAX_RESPONSE_BYTES);
@@ -13030,10 +13068,11 @@ var loadEngine = async (options) => {
         ok: false,
         message: displayText2(payload?.error) || `the engine request failed (HTTP ${res.status})`
       };
-    if (typeof payload?.engine !== "string" || typeof payload.knowledge !== "string")
+    const fromCache = payload?.cached === true && cache !== void 0;
+    if (!fromCache && (typeof payload?.engine !== "string" || typeof payload.knowledge !== "string"))
       return { ok: false, message: "the engine response is malformed" };
-    const engineBytes = Buffer.from(payload.engine, "base64");
-    const knowledgeBytes = Buffer.from(payload.knowledge, "base64");
+    const engineBytes = fromCache ? cache.engine : Buffer.from(payload?.engine, "base64");
+    const knowledgeBytes = fromCache ? cache.knowledge : Buffer.from(payload?.knowledge, "base64");
     const releaseBytes = await download(ENGINE_RELEASE_URL, MAX_RELEASE_BYTES);
     const signature = await download(`${ENGINE_RELEASE_URL}.sig`, MAX_RELEASE_BYTES);
     let envelope;
@@ -13053,15 +13092,38 @@ var loadEngine = async (options) => {
       return { ok: false, message: "the engine knowledge does not match the schema" };
     const file2 = join3(mkdtempSync(join3(options.dir, "harbyn-engine-")), "harbyn-engine.mjs");
     writeFileSync2(file2, engineBytes, { flag: "wx" });
-    const engine = await (options.importer ?? ((url2) => import(url2)))(
-      pathToFileURL(file2).href
-    );
+    let engine;
+    try {
+      engine = await (options.importer ?? ((url2) => import(url2)))(pathToFileURL(file2).href);
+    } finally {
+      rmSync(dirname(file2), { recursive: true, force: true });
+    }
     if (!isEngine(engine))
       return {
         ok: false,
         message: "the engine does not match this Action (update the Action to its latest release)"
       };
-    return { ok: true, engine, knowledge: knowledge.data };
+    if (!fromCache && options.cacheDir) {
+      try {
+        mkdirSync2(options.cacheDir, { recursive: true });
+        for (const [name, bytes] of [
+          [CACHE_ENGINE, engineBytes],
+          [CACHE_KNOWLEDGE, knowledgeBytes]
+        ]) {
+          const temp = join3(options.cacheDir, `.${randomBytes(6).toString("hex")}.tmp`);
+          writeFileSync2(temp, bytes, { flag: "wx" });
+          renameSync2(temp, join3(options.cacheDir, name));
+        }
+      } catch {
+      }
+    }
+    return {
+      ok: true,
+      engine,
+      knowledge: knowledge.data,
+      engineSha256: sha2562(engineBytes),
+      fresh: !fromCache
+    };
   } catch (error2) {
     const message = error2 instanceof FeedVerificationError ? `the engine could not be verified (${error2.message})` : `the engine could not be loaded (${displayText2(error2.message)})`;
     return { ok: false, message };
@@ -13517,7 +13579,7 @@ var VERSION2 = PACKAGE_VERSION;
 var PUBLIC_NPM = /^https:\/\/registry\.(?:npmjs\.org|yarnpkg\.com)\//;
 var PUBLIC_PYPI = /^https:\/\/(?:pypi\.org\/simple|pypi\.python\.org\/simple|files\.pythonhosted\.org)\/?/;
 var basename = (path) => path.slice(path.lastIndexOf("/") + 1);
-var dirname = (path) => path.includes("/") ? path.slice(0, path.lastIndexOf("/")) : "";
+var dirname2 = (path) => path.includes("/") ? path.slice(0, path.lastIndexOf("/")) : "";
 var unquote = (s) => s.trim().replace(/^["']|["']$/g, "");
 var normalisePypi = (name) => name.toLowerCase().replace(/[-_.]+/g, "-");
 var npmDirect = (text) => {
@@ -13753,7 +13815,7 @@ var InventoryCollector = class {
   invalid = 0;
   add(path, text) {
     const name = basename(path);
-    const dir = dirname(path);
+    const dir = dirname2(path);
     if (name === "package.json") {
       const direct = npmDirect(text);
       if (direct) this.npmDirectByDir.set(dir, direct);
@@ -13847,7 +13909,7 @@ var InventoryCollector = class {
 };
 
 // src/walk.ts
-import { existsSync as existsSync2, lstatSync as lstatSync2, readdirSync as readdirSync2, readFileSync as readFileSync3 } from "node:fs";
+import { existsSync as existsSync2, lstatSync as lstatSync3, readdirSync as readdirSync2, readFileSync as readFileSync4 } from "node:fs";
 import { join as join4 } from "node:path";
 
 // src/ignore.ts
@@ -13995,9 +14057,9 @@ var newStats = () => ({
 });
 var readSmall = (full) => {
   try {
-    const stat = lstatSync2(full);
+    const stat = lstatSync3(full);
     if (!stat.isFile() || stat.size > MAX_IGNORE_BYTES) return void 0;
-    return readFileSync3(full, "utf8");
+    return readFileSync4(full, "utf8");
   } catch {
     return void 0;
   }
@@ -14025,7 +14087,7 @@ function* walk(root, stats, options = {}) {
       const rel = dir.rel === "" ? name : `${dir.rel}/${name}`;
       let stat;
       try {
-        stat = lstatSync2(full);
+        stat = lstatSync3(full);
       } catch {
         continue;
       }
@@ -14050,7 +14112,7 @@ function* walk(root, stats, options = {}) {
       }
       if (options.onLockfile && INVENTORY_FILES.has(name) && stat.size > 0 && stat.size <= MAX_LOCKFILE_BYTES && !rules.ignores(rel, false)) {
         try {
-          options.onLockfile({ path: rel, text: readFileSync3(full, "utf8") });
+          options.onLockfile({ path: rel, text: readFileSync4(full, "utf8") });
         } catch {
         }
         continue;
@@ -14067,7 +14129,7 @@ function* walk(root, stats, options = {}) {
       }
       let buffer;
       try {
-        buffer = readFileSync3(full);
+        buffer = readFileSync4(full);
       } catch {
         continue;
       }
@@ -14140,7 +14202,8 @@ var toManifest = (result2, scannerVersion, options = {}) => {
         direct,
         dev
       }))
-    } : {}
+    } : {},
+    ...options.fixes ? { fixes: options.fixes } : {}
   });
 };
 var requestOidcToken = async (env, fetcher) => {
@@ -14245,6 +14308,10 @@ if (onUploadError !== "warn" && onUploadError !== "fail")
 var now = /* @__PURE__ */ new Date();
 var today = now.toISOString().slice(0, 10);
 var feedDir = input2("feed-dir");
+var isFixReport = (value) => {
+  const r = value;
+  return typeof r === "object" && r !== null && ["allowed", "blocked", "unknown"].includes(String(r.pullRequests)) && Number.isInteger(r.opened) && r.opened >= 0 && r.opened <= 100;
+};
 var writeOutput = (name, value) => {
   if (process.env.GITHUB_OUTPUT) appendFileSync(process.env.GITHUB_OUTPUT, `${name}=${value}
 `);
@@ -14281,12 +14348,57 @@ writeOutput("report", reportPath);
 console.log(
   `${count} affected ${count === 1 ? "line" : "lines"}, ${result.stats.scanned} ${result.stats.scanned === 1 ? "file" : "files"} scanned.`
 );
+var fixes;
+var fixError;
+if (remediate === "true") {
+  let token = "";
+  try {
+    token = await requestOidcToken(process.env, fetch);
+  } catch (error2) {
+    console.log(workflowCommand("warning", CLI_NAME, `no fixes: ${error2.message}`));
+  }
+  const loaded = token ? await loadEngine({
+    auth: { kind: "ci", connection, token },
+    dir: process.env.RUNNER_TEMP ?? workspace,
+    fetch,
+    cacheDir: join5(process.env.RUNNER_TEMP ?? workspace, ENGINE_CACHE_DIR)
+  }) : { ok: false, message: "" };
+  if (loaded.ok && loaded.fresh) writeOutput("engine-cache-key", loaded.engineSha256.slice(0, 16));
+  if (loaded.ok) {
+    try {
+      const report = await loaded.engine.runAction({
+        result,
+        feed,
+        knowledge: loaded.knowledge,
+        target: target2,
+        githubToken: input2("github-token"),
+        llm,
+        workflowCommand,
+        writeOutput
+      });
+      fixes = isFixReport(report) ? report : { pullRequests: "unknown", opened: 0 };
+    } catch (error2) {
+      fixError = error2.message;
+    }
+  } else if (loaded.message) {
+    console.log(
+      workflowCommand(
+        "warning",
+        CLI_NAME,
+        `no fixes: ${loaded.message}. The scan above is complete.`
+      )
+    );
+  }
+}
 if (upload === "true") {
   let outcome;
   try {
     const body = uploadBody(
       connection,
-      toManifest(result, CLI_VERSION, { inventory: inventory === "true" })
+      toManifest(result, CLI_VERSION, {
+        inventory: inventory === "true",
+        ...fixes ? { fixes } : {}
+      })
     );
     if (process.env.GITHUB_STEP_SUMMARY) {
       const pretty = JSON.stringify(JSON.parse(body), null, 2);
@@ -14318,37 +14430,5 @@ ${pretty}
       )
     );
 }
-if (remediate === "true") {
-  let token = "";
-  try {
-    token = await requestOidcToken(process.env, fetch);
-  } catch (error2) {
-    console.log(workflowCommand("warning", CLI_NAME, `no fixes: ${error2.message}`));
-  }
-  const loaded = token ? await loadEngine({ connection, token, dir: process.env.RUNNER_TEMP ?? workspace, fetch }) : { ok: false, message: "" };
-  if (loaded.ok) {
-    try {
-      await loaded.engine.runAction({
-        result,
-        feed,
-        knowledge: loaded.knowledge,
-        target: target2,
-        githubToken: input2("github-token"),
-        llm,
-        workflowCommand,
-        writeOutput
-      });
-    } catch (error2) {
-      fail(`fixes: ${error2.message}`);
-    }
-  } else if (loaded.message) {
-    console.log(
-      workflowCommand(
-        "warning",
-        CLI_NAME,
-        `no fixes: ${loaded.message}. The scan above is complete.`
-      )
-    );
-  }
-}
+if (fixError !== void 0) fail(`fixes: ${fixError}`);
 process.exit(failOn === "findings" && count > 0 ? 1 : 0);

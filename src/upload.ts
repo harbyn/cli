@@ -10,7 +10,7 @@ export const CONNECTION_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[
 export const toManifest = (
   result: ScanResult,
   scannerVersion: string,
-  options: { inventory?: boolean } = {},
+  options: { inventory?: boolean; fixes?: RepoManifest["fixes"] } = {},
 ): RepoManifest => {
   const groups = new Map<string, RepoManifest["findings"][number]>();
   const vendors = new Set<string>(result.usage.map((u) => u.vendor.id));
@@ -58,6 +58,7 @@ export const toManifest = (
             })),
         }
       : {}),
+    ...(options.fixes ? { fixes: options.fixes } : {}),
   });
 };
 

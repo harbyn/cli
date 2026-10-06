@@ -46,6 +46,12 @@ export const repoManifest = z.strictObject({
   vendors: z.array(slug).max(MANIFEST_LIMITS.vendors),
   findings: z.array(manifestFinding).max(MANIFEST_LIMITS.findings),
   packages: z.array(manifestPackage).max(MANIFEST_LIMITS.packages).optional(),
+  fixes: z
+    .strictObject({
+      pullRequests: z.enum(["allowed", "blocked", "unknown"]),
+      opened: z.number().int().min(0).max(100),
+    })
+    .optional(),
 });
 
 export type RepoManifest = z.infer<typeof repoManifest>;

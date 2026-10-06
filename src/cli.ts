@@ -1,11 +1,14 @@
-import { resolve } from "node:path";
+import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
 import { FeedVerificationError } from "./feed/index.ts";
 import { config } from "zod";
 import { banner, showsBanner } from "./banner.ts";
 import { loadEngine } from "./engine.ts";
 import { getFeed } from "./feed-source.ts";
 import { actionable, scan, toDependencyText, toJson, toText } from "./index.ts";
+import { configDir, deviceLogin, logout, readToken, saveToken, whoami } from "./login.ts";
 import { PAID_FIX_MESSAGE } from "./product.ts";
+import { defaultCacheDir } from "./remote-feed.ts";
 import { CLI_NAME, CLI_VERSION } from "./product.ts";
 import { CONNECTION_ID, requestOidcToken } from "./upload.ts";
 
@@ -13,8 +16,11 @@ config({ jitless: true });
 
 const USAGE = `usage: ${CLI_NAME} scan [dir] [options]
 
-  fix, migrate        automatic fixes and SDK migrations are part of Harbyn Pro and Team, switched on
-                      from the dashboard: https://harbyn.com/pricing
+  login               sign this CLI in from your browser (Harbyn Pro and Team: fixes on this machine)
+  logout              sign it out, and revoke the sign-in
+  fix [dir] [--write] show the fixes the paid engine makes; --write applies them to the files
+  migrate             SDK migrations (prepare | apply); see https://harbyn.com/docs
+                      Fixes and migrations are part of Harbyn Pro and Team: https://harbyn.com/pricing
 
   --json              machine-readable output
   --ci                exit 1 when there are findings in code
@@ -28,8 +34,8 @@ const USAGE = `usage: ${CLI_NAME} scan [dir] [options]
   --feed-dir <dir>    development: read an unsigned feed from a local directory
   --version           print the version
 
-Read-only. Never opens .env or key files. Nothing about your code leaves this machine;
-the only network request is the download of the signed change feed.`;
+scan is read-only, never opens .env or key files, and makes one network request: the
+signed change feed. Nothing about your code leaves this machine, with any command.`;
 
 const args = process.argv.slice(2);
 const VALUE_FLAGS = new Set([
@@ -54,33 +60,98 @@ if (flag("--version")) {
   process.exit(0);
 }
 const command = positional[0] ?? "scan";
+if (command === "login") {
+  try {
+    const { token, expiresAt } = await deviceLogin({ fetch, print: (line) => console.log(line) });
+    if (readToken()) await logout(fetch).catch(() => undefined);
+    saveToken(token, expiresAt);
+    const who = await whoami(fetch, token).catch(() => undefined);
+    console.log(
+      `Signed in${who?.email ? ` as ${who.email}` : ""}.${who && !who.fixes ? " Automatic fixes need Harbyn Pro or Team: https://harbyn.com/pricing" : ""}`,
+    );
+    console.log(`The sign-in is saved in ${configDir()}; \`${CLI_NAME} logout\` removes it.`);
+    process.exit(0);
+  } catch (error) {
+    console.error(`${CLI_NAME}: ${(error as Error).message}`);
+    process.exit(3);
+  }
+}
+if (command === "logout") {
+  const out = await logout(fetch);
+  if (!out.signedIn) console.log("Not signed in.");
+  else if (out.revoked) console.log("Signed out.");
+  else {
+    console.error(
+      `${CLI_NAME}: deleted here, but the sign-in could not be revoked: sign it out in Settings > Command line`,
+    );
+    process.exit(1);
+  }
+  process.exit(0);
+}
 if (command === "fix" || command === "migrate") {
   const connection = (process.env.HARBYN_CONNECTION ?? "").trim().toLowerCase();
-  if (
+  const inCi =
     command === "migrate" &&
     process.env.ACTIONS_ID_TOKEN_REQUEST_URL &&
-    CONNECTION_ID.test(connection)
-  ) {
-    try {
-      const token = await requestOidcToken(process.env, fetch);
-      const loaded = await loadEngine({
-        connection,
-        token,
-        dir: process.env.RUNNER_TEMP ?? resolve("."),
-        fetch,
-      });
-      if (!loaded.ok) {
-        console.error(`${CLI_NAME}: no migration: ${loaded.message}`);
-        process.exit(3);
-      }
-      process.exit(await loaded.engine.runMigrate(positional, values, loaded.knowledge));
-    } catch (error) {
-      console.error(`${CLI_NAME}: no migration: ${(error as Error).message}`);
+    CONNECTION_ID.test(connection);
+  const signedIn = inCi ? undefined : readToken();
+  if (!inCi && !signedIn) {
+    console.log(PAID_FIX_MESSAGE);
+    console.log(
+      `Already on Pro or Team? Run \`${CLI_NAME} login\` once, then \`${CLI_NAME} ${command}\` here.`,
+    );
+    process.exit(0);
+  }
+  try {
+    const auth = inCi
+      ? { kind: "ci" as const, connection, token: await requestOidcToken(process.env, fetch) }
+      : { kind: "cli" as const, token: signedIn as string };
+    const loaded = await loadEngine({
+      auth,
+      dir: process.env.RUNNER_TEMP ?? tmpdir(),
+      fetch,
+      ...(inCi ? {} : { cacheDir: join(defaultCacheDir(), "engine") }),
+    });
+    if (!loaded.ok) {
+      console.error(
+        `${CLI_NAME}: no ${command === "fix" ? "fixes" : "migration"}: ${loaded.message}`,
+      );
       process.exit(3);
     }
+    if (command === "migrate")
+      process.exit(await loaded.engine.runMigrate(positional, values, loaded.knowledge));
+    if (!loaded.engine.runFix) {
+      console.error(
+        `${CLI_NAME}: this engine cannot fix locally yet: update the CLI (npx ${CLI_NAME}@latest fix)`,
+      );
+      process.exit(3);
+    }
+    const feed = await getFeed({
+      now: new Date(),
+      onWarning: (message) => console.error(`warning: ${message}`),
+    });
+    const target = resolve(positional[1] ?? ".");
+    const result = scan(target, feed, {
+      ignore: values("--ignore"),
+      includeNestedRepos: flag("--include-nested"),
+      noGitignore: flag("--no-gitignore"),
+    });
+    process.exit(
+      await loaded.engine.runFix({
+        result,
+        feed,
+        knowledge: loaded.knowledge,
+        target,
+        write: flag("--write"),
+        print: (text) => console.log(text),
+      }),
+    );
+  } catch (error) {
+    console.error(
+      `${CLI_NAME}: no ${command === "fix" ? "fixes" : "migration"}: ${error instanceof FeedVerificationError ? error.message : (error as Error).message}`,
+    );
+    process.exit(3);
   }
-  console.log(PAID_FIX_MESSAGE);
-  process.exit(0);
 }
 const terminal = {
   isTTY: Boolean(process.stdout.isTTY),

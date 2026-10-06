@@ -70,6 +70,8 @@ outputs:
     description: Path of the full JSON report on the runner.
   pull-requests:
     description: The pull requests remediate opened or found open, space-separated.
+  engine-cache-key:
+    description: "With remediate: set when the fix engine was downloaded this run (not restored), for actions/cache/save of the runner's harbyn-engine-cache directory. Cached bytes are verified against the signed release like downloaded ones."
 
 runs:
   using: node24

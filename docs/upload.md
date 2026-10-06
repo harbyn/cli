@@ -21,24 +21,27 @@ document is printed in the job summary before it is sent. Nothing else is sent, 
 }
 ```
 
-| Field                   | Meaning                                                                |
-| ----------------------- | ---------------------------------------------------------------------- |
-| `version`               | format version, always `1`                                             |
-| `scanner`               | scanner version                                                        |
-| `filesScanned`          | number of files read                                                   |
-| `vendors`               | vendor ids from the public feed that the repository uses (at most 200) |
-| `findings`              | one entry per affected change and match kind (at most 1000)            |
-| `findings[].eventId`    | id of the change in the public feed                                    |
-| `findings[].identifier` | the model id or API version that matched, when the change lists it     |
-| `findings[].via`        | `model-id`, `api-version`, `package` or `endpoint`                     |
-| `findings[].context`    | `code`, `test`, `docs` or `catalog`                                    |
-| `findings[].count`      | number of matches                                                      |
-| `packages`              | only with `inventory: true`: the dependency list, at most 5000         |
-| `packages[].ecosystem`  | `npm` or `pypi`                                                        |
-| `packages[].name`       | package name on the public registry                                    |
-| `packages[].version`    | exact version from the lockfile                                        |
-| `packages[].direct`     | declared by the project, not only pulled in by another package         |
-| `packages[].dev`        | used only in development                                               |
+| Field                   | Meaning                                                                                                                              |
+| ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| `version`               | format version, always `1`                                                                                                           |
+| `scanner`               | scanner version                                                                                                                      |
+| `filesScanned`          | number of files read                                                                                                                 |
+| `vendors`               | vendor ids from the public feed that the repository uses (at most 200)                                                               |
+| `findings`              | one entry per affected change and match kind (at most 1000)                                                                          |
+| `findings[].eventId`    | id of the change in the public feed                                                                                                  |
+| `findings[].identifier` | the model id or API version that matched, when the change lists it                                                                   |
+| `findings[].via`        | `model-id`, `api-version`, `package` or `endpoint`                                                                                   |
+| `findings[].context`    | `code`, `test`, `docs` or `catalog`                                                                                                  |
+| `findings[].count`      | number of matches                                                                                                                    |
+| `packages`              | only with `inventory: true`: the dependency list, at most 5000                                                                       |
+| `packages[].ecosystem`  | `npm` or `pypi`                                                                                                                      |
+| `packages[].name`       | package name on the public registry                                                                                                  |
+| `packages[].version`    | exact version from the lockfile                                                                                                      |
+| `packages[].direct`     | declared by the project, not only pulled in by another package                                                                       |
+| `packages[].dev`        | used only in development                                                                                                             |
+| `fixes`                 | only with `remediate: true`: what the fix run met on GitHub                                                                          |
+| `fixes.pullRequests`    | `allowed` (it opened one), `blocked` (the repository does not let GitHub Actions create pull requests) or `unknown` (none attempted) |
+| `fixes.opened`          | number of pull requests it opened (at most 100)                                                                                      |
 
 `packages` comes from lockfiles (package-lock, npm-shrinkwrap, pnpm-lock, yarn.lock, poetry.lock, uv.lock, pinned
 requirements). Only packages resolved from the public npm registry or PyPI are listed: private registries,

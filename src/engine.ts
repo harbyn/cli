@@ -1,4 +1,14 @@
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { createHash, randomBytes } from "node:crypto";
+import {
+  lstatSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  renameSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
+import { dirname } from "node:path";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import {
@@ -19,6 +29,8 @@ export const ENGINE_KEYS: TrustedKeys = {
 };
 
 export const ENGINE_URL = "https://api.harbyn.com/ingest/engine";
+export const CLI_ENGINE_URL = "https://api.harbyn.com/cli/engine";
+export const ENGINE_CACHE_DIR = "harbyn-engine-cache";
 export const ENGINE_RELEASE_URL = "https://feed.harbyn.com/v1/engine-release.json";
 
 const MAX_RESPONSE_BYTES = 32 * 1024 * 1024;
@@ -36,29 +48,69 @@ export interface EngineActionInput {
   writeOutput: (name: string, value: string) => void;
 }
 
+export interface FixReport {
+  pullRequests: "allowed" | "blocked" | "unknown";
+  opened: number;
+}
+
+export interface EngineFixInput {
+  result: ScanResult;
+  feed: FeedIndex;
+  knowledge: EngineKnowledge;
+  target: string;
+  write: boolean;
+  print: (text: string) => void;
+}
+
 export interface EngineModule {
   ENGINE_ABI: number;
-  runAction(input: EngineActionInput): Promise<void>;
+  runAction(input: EngineActionInput): Promise<FixReport | void>;
   runMigrate(
     positional: readonly string[],
     values: (name: string) => string[],
     knowledge: EngineKnowledge,
   ): Promise<number>;
+  runFix?(input: EngineFixInput): Promise<number>;
 }
 
 export type EngineLoad =
-  { ok: true; engine: EngineModule; knowledge: EngineKnowledge } | { ok: false; message: string };
+  | {
+      ok: true;
+      engine: EngineModule;
+      knowledge: EngineKnowledge;
+      engineSha256: string;
+      fresh: boolean;
+    }
+  | { ok: false; message: string };
 
 export interface LoadEngineOptions {
-  connection: string;
-  token: string;
+  auth: { kind: "ci"; connection: string; token: string } | { kind: "cli"; token: string };
   dir: string;
   fetch: Fetch;
   download?: Download;
   trustedKeys?: TrustedKeys;
   now?: Date;
   importer?: (url: string) => Promise<unknown>;
+  cacheDir?: string;
 }
+
+const CACHE_ENGINE = "harbyn-engine.mjs";
+const CACHE_KNOWLEDGE = "engine-knowledge.json";
+const sha256 = (bytes: Uint8Array): string => createHash("sha256").update(bytes).digest("hex");
+
+const readCache = (dir: string): { engine: Buffer; knowledge: Buffer } | undefined => {
+  try {
+    const files = [join(dir, CACHE_ENGINE), join(dir, CACHE_KNOWLEDGE)];
+    if (!files.every((f) => lstatSync(f).isFile() && lstatSync(f).size <= MAX_RESPONSE_BYTES))
+      return undefined;
+    return {
+      engine: readFileSync(files[0] as string),
+      knowledge: readFileSync(files[1] as string),
+    };
+  } catch {
+    return undefined;
+  }
+};
 
 const displayText = (text: unknown): string =>
   typeof text === "string"
@@ -98,16 +150,24 @@ export const loadEngine = async (options: LoadEngineOptions): Promise<EngineLoad
       message: "automatic fixes are not available in this release of the Action yet",
     };
   const download = options.download ?? httpsDownload;
+  const cache = options.cacheDir ? readCache(options.cacheDir) : undefined;
+  const have = cache
+    ? { engine: sha256(cache.engine), knowledge: sha256(cache.knowledge) }
+    : undefined;
   try {
-    const res = await options.fetch(ENGINE_URL, {
+    const ci = options.auth.kind === "ci";
+    const res = await options.fetch(ci ? ENGINE_URL : CLI_ENGINE_URL, {
       method: "POST",
       redirect: "error",
       headers: {
-        authorization: `Bearer ${options.token}`,
+        authorization: `Bearer ${options.auth.token}`,
         "content-type": "application/json",
         accept: "application/json",
       },
-      body: JSON.stringify({ connection: options.connection }),
+      body: JSON.stringify({
+        ...(options.auth.kind === "ci" ? { connection: options.auth.connection } : {}),
+        ...(have ? { have } : {}),
+      }),
       signal: AbortSignal.timeout(60_000),
     });
     const body = await readCapped(res, MAX_RESPONSE_BYTES);
@@ -117,16 +177,23 @@ export const loadEngine = async (options: LoadEngineOptions): Promise<EngineLoad
     } catch {
       json = undefined;
     }
-    const payload = json as { engine?: unknown; knowledge?: unknown; error?: unknown } | undefined;
+    const payload = json as
+      { engine?: unknown; knowledge?: unknown; cached?: unknown; error?: unknown } | undefined;
     if (!res.ok)
       return {
         ok: false,
         message: displayText(payload?.error) || `the engine request failed (HTTP ${res.status})`,
       };
-    if (typeof payload?.engine !== "string" || typeof payload.knowledge !== "string")
+    const fromCache = payload?.cached === true && cache !== undefined;
+    if (
+      !fromCache &&
+      (typeof payload?.engine !== "string" || typeof payload.knowledge !== "string")
+    )
       return { ok: false, message: "the engine response is malformed" };
-    const engineBytes = Buffer.from(payload.engine, "base64");
-    const knowledgeBytes = Buffer.from(payload.knowledge, "base64");
+    const engineBytes = fromCache ? cache.engine : Buffer.from(payload?.engine as string, "base64");
+    const knowledgeBytes = fromCache
+      ? cache.knowledge
+      : Buffer.from(payload?.knowledge as string, "base64");
 
     const releaseBytes = await download(ENGINE_RELEASE_URL, MAX_RELEASE_BYTES);
     const signature = await download(`${ENGINE_RELEASE_URL}.sig`, MAX_RELEASE_BYTES);
@@ -149,15 +216,37 @@ export const loadEngine = async (options: LoadEngineOptions): Promise<EngineLoad
 
     const file = join(mkdtempSync(join(options.dir, "harbyn-engine-")), "harbyn-engine.mjs");
     writeFileSync(file, engineBytes, { flag: "wx" });
-    const engine = await (options.importer ?? ((url: string) => import(url)))(
-      pathToFileURL(file).href,
-    );
+    let engine: unknown;
+    try {
+      engine = await (options.importer ?? ((url: string) => import(url)))(pathToFileURL(file).href);
+    } finally {
+      rmSync(dirname(file), { recursive: true, force: true });
+    }
     if (!isEngine(engine))
       return {
         ok: false,
         message: "the engine does not match this Action (update the Action to its latest release)",
       };
-    return { ok: true, engine, knowledge: knowledge.data };
+    if (!fromCache && options.cacheDir) {
+      try {
+        mkdirSync(options.cacheDir, { recursive: true });
+        for (const [name, bytes] of [
+          [CACHE_ENGINE, engineBytes],
+          [CACHE_KNOWLEDGE, knowledgeBytes],
+        ] as const) {
+          const temp = join(options.cacheDir, `.${randomBytes(6).toString("hex")}.tmp`);
+          writeFileSync(temp, bytes, { flag: "wx" });
+          renameSync(temp, join(options.cacheDir, name));
+        }
+      } catch {}
+    }
+    return {
+      ok: true,
+      engine,
+      knowledge: knowledge.data,
+      engineSha256: sha256(engineBytes),
+      fresh: !fromCache,
+    };
   } catch (error) {
     const message =
       error instanceof FeedVerificationError

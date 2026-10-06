@@ -1,5 +1,12 @@
 import { generateKeyPairSync } from "node:crypto";
-import { mkdtempSync } from "node:fs";
+import {
+  existsSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -69,8 +76,11 @@ const setup = (served: Served = {}, over: Partial<LoadEngineOptions> = {}) => {
     throw new Error(`unexpected download ${url}`);
   };
   const options: LoadEngineOptions = {
-    connection: "00000000-0000-4000-8000-000000000001",
-    token: "header.payload.signature",
+    auth: {
+      kind: "ci",
+      connection: "00000000-0000-4000-8000-000000000001",
+      token: "header.payload.signature",
+    },
     dir: mkdtempSync(join(tmpdir(), "harbyn-engine-test-")),
     trustedKeys: ours.trusted,
     now,
@@ -116,6 +126,88 @@ describe("paid engine loader", () => {
       connection: "00000000-0000-4000-8000-000000000001",
     });
     expect(t.imported).toHaveLength(1);
+    expect(readdirSync(t.options.dir)).toEqual([]);
+  });
+
+  it("keeps a verified engine for the next run, which sends only its hashes and gets no bytes back", async () => {
+    const cacheDir = join(mkdtempSync(join(tmpdir(), "harbyn-cache-test-")), "harbyn-engine-cache");
+    const first = setup({}, { cacheDir });
+    const fresh = await loadEngine(first.options);
+    expect(fresh).toMatchObject({
+      ok: true,
+      fresh: true,
+      engineSha256: expect.stringMatching(/^[0-9a-f]{64}$/),
+    });
+    expect(JSON.parse(String(first.requests[0]?.init.body))).toEqual({
+      connection: "00000000-0000-4000-8000-000000000001",
+    });
+    expect(readFileSync(join(cacheDir, "harbyn-engine.mjs"), "utf8")).toBe(engineSource());
+
+    const second = setup({ body: JSON.stringify({ cached: true }) }, { cacheDir });
+    const reused = await loadEngine(second.options);
+    expect(reused).toMatchObject({ ok: true, fresh: false });
+    const sent = JSON.parse(String(second.requests[0]?.init.body)) as {
+      have?: { engine: string; knowledge: string };
+    };
+    expect(sent.have?.engine).toBe(fresh.ok ? fresh.engineSha256 : "");
+    expect(sent.have?.knowledge).toMatch(/^[0-9a-f]{64}$/);
+    expect(second.imported).toHaveLength(1);
+  });
+
+  it("abuse: a tampered cache never runs, and a failed download never reaches the cache", async () => {
+    const cacheDir = join(mkdtempSync(join(tmpdir(), "harbyn-cache-test-")), "harbyn-engine-cache");
+    await loadEngine(setup({}, { cacheDir }).options);
+    writeFileSync(join(cacheDir, "harbyn-engine.mjs"), `${engineSource()} globalThis.pwned = 1;`);
+    const poisoned = setup({ body: JSON.stringify({ cached: true }) }, { cacheDir });
+    expect(await loadEngine(poisoned.options)).toMatchObject({
+      ok: false,
+      message: expect.stringMatching(/could not be verified/),
+    });
+    expect(poisoned.imported).toHaveLength(0);
+    const empty = setup(
+      { body: JSON.stringify({ cached: true }) },
+      { cacheDir: join(tmpdir(), "harbyn-no-cache-here") },
+    );
+    expect(await loadEngine(empty.options)).toEqual({
+      ok: false,
+      message: "the engine response is malformed",
+    });
+    const clean = join(mkdtempSync(join(tmpdir(), "harbyn-cache-test-")), "harbyn-engine-cache");
+    const tampered = setup(
+      {
+        engine: enc(`${engineSource()} globalThis.pwned = 1;`),
+        release: { engine: enc(engineSource()), knowledge: enc(knowledgeJson) },
+      },
+      { cacheDir: clean },
+    );
+    expect((await loadEngine(tampered.options)).ok).toBe(false);
+    expect(existsSync(join(clean, "harbyn-engine.mjs"))).toBe(false);
+    if (process.platform !== "win32") {
+      const linked = join(mkdtempSync(join(tmpdir(), "harbyn-cache-test-")), "harbyn-engine-cache");
+      await loadEngine(setup({}, { cacheDir: linked }).options);
+      const outside = join(mkdtempSync(join(tmpdir(), "harbyn-outside-")), "victim.txt");
+      writeFileSync(outside, "untouched");
+      const engineFile = join(linked, "harbyn-engine.mjs");
+      const { rmSync } = await import("node:fs");
+      rmSync(engineFile);
+      symlinkSync(outside, engineFile);
+      const viaLink = setup({}, { cacheDir: linked });
+      const loaded = await loadEngine(viaLink.options);
+      expect(loaded).toMatchObject({ ok: true, fresh: true });
+      expect(JSON.parse(String(viaLink.requests[0]?.init.body)).have).toBeUndefined();
+      expect(readFileSync(outside, "utf8")).toBe("untouched");
+    }
+  });
+
+  it("with a CLI sign-in, asks the CLI endpoint with that token and names no repository", async () => {
+    const t = setup({}, { auth: { kind: "cli", token: `hbn_cli_${"a".repeat(43)}` } });
+    const loaded = await loadEngine(t.options);
+    expect(loaded.ok).toBe(true);
+    expect(t.requests[0]?.url).toBe("https://api.harbyn.com/cli/engine");
+    expect(new Headers(t.requests[0]?.init.headers).get("authorization")).toBe(
+      `Bearer hbn_cli_${"a".repeat(43)}`,
+    );
+    expect(JSON.parse(String(t.requests[0]?.init.body))).toEqual({});
   });
 
   it("does nothing while no engine key is pinned", async () => {
