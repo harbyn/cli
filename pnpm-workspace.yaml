@@ -2,3 +2,5 @@ minimumReleaseAge: 4320
 onlyBuiltDependencies: []
 allowBuilds:
   esbuild: false
+overrides:
+  source-map-js: ">=1.2.2"
