@@ -34,7 +34,7 @@ const eventId = z
 export const manifestFinding = z.strictObject({
   eventId,
   identifier: literalToken.optional(),
-  via: z.enum(["model-id", "api-version", "package", "endpoint"]),
+  via: z.enum(["model-id", "api-version", "package", "endpoint", "runtime"]),
   context: z.enum(["code", "test", "docs", "catalog"]),
   count: z.number().int().min(1).max(MANIFEST_LIMITS.count),
 });

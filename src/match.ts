@@ -10,7 +10,7 @@ import {
 import type { SourceFile } from "./walk.ts";
 
 export type FindingContext = "code" | "test" | "docs" | "catalog";
-export type FindingVia = "model-id" | "api-version" | "package" | "endpoint";
+export type FindingVia = "model-id" | "api-version" | "package" | "endpoint" | "runtime";
 
 export interface Finding {
   event: ChangeEvent;
@@ -67,19 +67,17 @@ const ECOSYSTEM_MANIFESTS: Record<string, RegExp> = {
   cargo: /(?:^|\/)Cargo\.toml$/,
 };
 
+const TEST_DIR = /(?:^|\/)(?:__tests__|tests?|spec|fixtures?|__mocks__|mocks?|e2e)\//i;
+const DOCS_DIR = /(?:^|\/)(?:docs?|documentation|examples?|samples?)\//i;
+
 export const contextOf = (path: string): FindingContext => {
-  if (
-    /(?:^|\/)(?:__tests__|tests?|spec|fixtures?|__mocks__|mocks?|e2e)\//i.test(path) ||
-    /\.(?:test|spec)\.[a-z]+$/i.test(path)
-  )
-    return "test";
-  if (
-    /\.(?:md|mdx|rst|txt|adoc)$/i.test(path) ||
-    /(?:^|\/)(?:docs?|documentation|examples?|samples?)\//i.test(path)
-  )
-    return "docs";
+  if (TEST_DIR.test(path) || /\.(?:test|spec)\.[a-z]+$/i.test(path)) return "test";
+  if (/\.(?:md|mdx|rst|txt|adoc)$/i.test(path) || DOCS_DIR.test(path)) return "docs";
   return "code";
 };
+
+export const configContextOf = (path: string): FindingContext =>
+  TEST_DIR.test(path) ? "test" : DOCS_DIR.test(path) ? "docs" : "code";
 
 const normalisePackageName = (ecosystem: string, name: string): string =>
   ecosystem === "pypi" ? name.toLowerCase().replace(/[._]+/g, "-") : name;
@@ -108,7 +106,7 @@ interface EndpointNeedle {
   path: string;
 }
 
-const liveEvents = (feed: FeedIndex): ChangeEvent[] => {
+export const liveEvents = (feed: FeedIndex): ChangeEvent[] => {
   const superseded = new Set(
     feed.events.map((e) => e.supersedes).filter((id): id is string => id !== undefined),
   );

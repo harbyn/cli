@@ -29,8 +29,8 @@ document is printed in the job summary before it is sent. Nothing else is sent, 
 | `vendors`               | vendor ids from the public feed that the repository uses (at most 200)                                                               |
 | `findings`              | one entry per affected change and match kind (at most 1000)                                                                          |
 | `findings[].eventId`    | id of the change in the public feed                                                                                                  |
-| `findings[].identifier` | the model id or API version that matched, when the change lists it                                                                   |
-| `findings[].via`        | `model-id`, `api-version`, `package` or `endpoint`                                                                                   |
+| `findings[].identifier` | the model id, API version or runtime (`node22`, `python3.11`, `nodejs20.x`) that matched, when the change lists it                   |
+| `findings[].via`        | `model-id`, `api-version`, `package`, `endpoint` or `runtime`                                                                        |
 | `findings[].context`    | `code`, `test`, `docs` or `catalog`                                                                                                  |
 | `findings[].count`      | number of matches                                                                                                                    |
 | `packages`              | only with `inventory: true`: the dependency list, at most 5000                                                                       |

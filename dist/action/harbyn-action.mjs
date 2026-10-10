@@ -12679,7 +12679,7 @@ var eventId = external_exports.string().max(160).regex(/^[a-z0-9-]+\/\d{4}-\d{2}
 var manifestFinding = external_exports.strictObject({
   eventId,
   identifier: literalToken.optional(),
-  via: external_exports.enum(["model-id", "api-version", "package", "endpoint"]),
+  via: external_exports.enum(["model-id", "api-version", "package", "endpoint", "runtime"]),
   context: external_exports.enum(["code", "test", "docs", "catalog"]),
   count: external_exports.number().int().min(1).max(MANIFEST_LIMITS.count)
 });
@@ -12871,7 +12871,7 @@ import { join as join2 } from "node:path";
 
 // src/product.ts
 var CLI_NAME = "harbyn";
-var CLI_VERSION = true ? "0.8.0" : "0.0.0-dev";
+var CLI_VERSION = true ? "0.9.0" : "0.0.0-dev";
 var PAID_FIX_MESSAGE = `Automatic fixes and SDK migrations are part of Harbyn Pro and Team.
 Switch them on for a repository from the dashboard, no terminal needed: https://harbyn.com/pricing
 This open-source CLI finds what will break and where: run \`${CLI_NAME} scan\`.`;
@@ -13328,13 +13328,14 @@ var ECOSYSTEM_MANIFESTS = {
   rubygems: /(?:^|\/)Gemfile$/,
   cargo: /(?:^|\/)Cargo\.toml$/
 };
+var TEST_DIR = /(?:^|\/)(?:__tests__|tests?|spec|fixtures?|__mocks__|mocks?|e2e)\//i;
+var DOCS_DIR = /(?:^|\/)(?:docs?|documentation|examples?|samples?)\//i;
 var contextOf = (path) => {
-  if (/(?:^|\/)(?:__tests__|tests?|spec|fixtures?|__mocks__|mocks?|e2e)\//i.test(path) || /\.(?:test|spec)\.[a-z]+$/i.test(path))
-    return "test";
-  if (/\.(?:md|mdx|rst|txt|adoc)$/i.test(path) || /(?:^|\/)(?:docs?|documentation|examples?|samples?)\//i.test(path))
-    return "docs";
+  if (TEST_DIR.test(path) || /\.(?:test|spec)\.[a-z]+$/i.test(path)) return "test";
+  if (/\.(?:md|mdx|rst|txt|adoc)$/i.test(path) || DOCS_DIR.test(path)) return "docs";
   return "code";
 };
+var configContextOf = (path) => TEST_DIR.test(path) ? "test" : DOCS_DIR.test(path) ? "docs" : "code";
 var normalisePackageName = (ecosystem2, name) => ecosystem2 === "pypi" ? name.toLowerCase().replace(/[._]+/g, "-") : name;
 var liveEvents = (feed2) => {
   const superseded = new Set(
@@ -13908,6 +13909,235 @@ var InventoryCollector = class {
   }
 };
 
+// src/runtimes.ts
+var RUNTIME_FILES = /* @__PURE__ */ new Set([
+  "package.json",
+  ".nvmrc",
+  ".node-version",
+  ".python-version",
+  "runtime.txt",
+  "pyproject.toml",
+  "serverless.yml",
+  "serverless.yaml",
+  "template.yaml",
+  "template.yml"
+]);
+var MAX_LINE = 1e3;
+var MAX_SPEC = 100;
+var MAX_DECLARATIONS = 100;
+var NODE_SYMBOL = /^node([1-9][0-9]{0,2})$/;
+var VERCEL_SYMBOL = /^(?:node|nodejs)?([1-9][0-9]{0,2})\.x$|^(?:node|nodejs)([1-9][0-9]{0,2})$/;
+var PYTHON_SYMBOL = /^python([23])\.(0|[1-9][0-9]?)$/;
+var LAMBDA_RUNTIME = /^(?:nodejs[1-9][0-9]?\.x|python[23]\.(?:0|[1-9][0-9]?)|ruby[1-9]\.(?:0|[1-9][0-9]?)|java[1-9][0-9]?(?:\.al2|\.al2023)?|dotnet(?:core)?[1-9][0-9]?(?:\.[0-9])?|go1\.x|provided(?:\.al2|\.al2023)?)$/;
+var SYMBOL_GRAMMARS = {
+  nodejs: (s) => {
+    const m = NODE_SYMBOL.exec(s);
+    return m ? { kind: "node", value: m[1] } : void 0;
+  },
+  python: (s) => {
+    const m = PYTHON_SYMBOL.exec(s);
+    return m ? { kind: "python", value: `${m[1]}.${m[2]}` } : void 0;
+  },
+  "aws-lambda": (s) => LAMBDA_RUNTIME.test(s) ? { kind: "lambda", value: s } : void 0,
+  vercel: (s) => {
+    const m = VERCEL_SYMBOL.exec(s);
+    return m ? { kind: "node", value: m[1] ?? m[2], vercel: true } : void 0;
+  }
+};
+var runtimeSymbol = (vendor2, symbol2) => Object.hasOwn(SYMBOL_GRAMMARS, vendor2) && symbol2.length <= 32 ? SYMBOL_GRAMMARS[vendor2]?.(symbol2) : void 0;
+var NODE_COMPARATOR = /^(>=|<=|>|<|=|\^|~>|~)?v?([0-9]{1,3}|[xX*])(?:\.([0-9]{1,6}|[xX*]))?(?:\.([0-9]{1,6}|[xX*]))?(?:-[0-9A-Za-z.]{1,32})?$/;
+var nodeFloor = (spec) => {
+  if (spec.length > MAX_SPEC) return void 0;
+  const alternatives = spec.split("||");
+  if (alternatives.length > 8) return void 0;
+  let floor;
+  for (const alternative of alternatives) {
+    const tokens = alternative.replace(/(>=|<=|>|<|=|\^|~>|~) +/g, "$1").trim().split(/ +/);
+    let lower;
+    for (let i = 0; i < tokens.length; i++) {
+      const token = tokens[i];
+      if (token === "-") {
+        i++;
+        continue;
+      }
+      const m = NODE_COMPARATOR.exec(token);
+      if (!m) return void 0;
+      const op = m[1] ?? "";
+      if (op === "<" || op === "<=" || !/^[0-9]/.test(m[2])) continue;
+      const major = Number(m[2]) + (op === ">" && m[3] === void 0 ? 1 : 0);
+      lower = lower === void 0 ? major : Math.max(lower, major);
+    }
+    if (lower === void 0) return void 0;
+    floor = floor === void 0 ? lower : Math.min(floor, lower);
+  }
+  return floor;
+};
+var PYTHON_SPEC = /^(===|==|~=|>=|<=|!=|>|<) *([0-9])(?:\.([0-9]{1,2}))?(?:\.[0-9*]{1,6})?(?:\.[0-9*]{1,6})?$/;
+var pythonFloor = (spec) => {
+  if (spec.length > MAX_SPEC) return void 0;
+  const parts = spec.split(",");
+  if (parts.length > 8) return void 0;
+  let lower;
+  for (const part of parts) {
+    const m = PYTHON_SPEC.exec(part.trim());
+    if (!m) return void 0;
+    if (m[1] === "<" || m[1] === "<=" || m[1] === "!=") continue;
+    const version2 = [Number(m[2]), Number(m[3] ?? 0)];
+    if (!lower || version2[0] > lower[0] || version2[0] === lower[0] && version2[1] > lower[1])
+      lower = version2;
+  }
+  return lower ? `${lower[0]}.${lower[1]}` : void 0;
+};
+var NODE_VERSION_FILE = /^v?([1-9][0-9]{0,2})(?:\.[0-9]{1,6})?(?:\.[0-9]{1,6})?$/;
+var PYTHON_VERSION = /^([23])\.([0-9]{1,2})(?:\.[0-9]{1,4})?$/;
+var HEROKU_PYTHON = /^python-([23])\.([0-9]{1,2})(?:\.[0-9]{1,4})?$/;
+var TOML_SECTION = /^ *\[([A-Za-z0-9_.-]{1,64})\] *(?:#.*)?$/;
+var REQUIRES_PYTHON = /^ *requires-python *= *["']([^"']{1,100})["'] *(?:#.*)?$/;
+var SERVERLESS_RUNTIME = /^ *runtime: *["']?([A-Za-z0-9.]{1,40})["']? *(?:#.*)?$/;
+var SAM_RUNTIME = /^ *Runtime: *["']?([A-Za-z0-9.]{1,40})["']? *(?:#.*)?$/;
+var basename2 = (path) => path.slice(path.lastIndexOf("/") + 1);
+var dirname3 = (path) => path.includes("/") ? path.slice(0, path.lastIndexOf("/")) : "";
+var withoutBom = (text) => text.charCodeAt(0) === 65279 ? text.slice(1) : text;
+var linesOf = (text) => withoutBom(text).split("\n").map((l) => l.length > MAX_LINE ? "" : l.replace(/\r$/, "").replaceAll("	", " "));
+var firstValue = (lines2) => {
+  for (let i = 0; i < lines2.length; i++) {
+    const text = lines2[i].trim();
+    if (text !== "" && !text.startsWith("#")) return { text, line: i + 1 };
+  }
+  return void 0;
+};
+var fromPackageJson = (text, lines2) => {
+  let json2;
+  try {
+    json2 = JSON.parse(withoutBom(text));
+  } catch {
+    return [];
+  }
+  const engines = typeof json2 === "object" && json2 !== null ? json2.engines : void 0;
+  const spec = typeof engines === "object" && engines !== null ? engines.node : void 0;
+  if (typeof spec !== "string") return [];
+  const major = nodeFloor(spec);
+  if (major === void 0) return [];
+  const enginesAt = lines2.findIndex((l) => l.includes('"engines"'));
+  const nodeAt = enginesAt === -1 ? -1 : lines2.findIndex((l, i) => i >= enginesAt && /"node" *:/.test(l));
+  return [
+    {
+      kind: "node",
+      value: String(major),
+      line: (nodeAt === -1 ? enginesAt : nodeAt) + 1 || 1,
+      engines: true
+    }
+  ];
+};
+var declaredRuntimes = (path, text) => {
+  const name = basename2(path);
+  if (!RUNTIME_FILES.has(name)) return [];
+  const lines2 = linesOf(text);
+  const out = [];
+  switch (name) {
+    case "package.json":
+      return fromPackageJson(text, lines2);
+    case ".nvmrc":
+    case ".node-version": {
+      const first = firstValue(lines2);
+      const m = first ? NODE_VERSION_FILE.exec(first.text) : null;
+      if (first && m) out.push({ kind: "node", value: m[1], line: first.line });
+      break;
+    }
+    case ".python-version":
+      lines2.forEach((raw, i) => {
+        const m = PYTHON_VERSION.exec(raw.trim());
+        if (m) out.push({ kind: "python", value: `${Number(m[1])}.${Number(m[2])}`, line: i + 1 });
+      });
+      break;
+    case "runtime.txt": {
+      const first = firstValue(lines2);
+      const m = first ? HEROKU_PYTHON.exec(first.text) : null;
+      if (first && m)
+        out.push({ kind: "python", value: `${Number(m[1])}.${Number(m[2])}`, line: first.line });
+      break;
+    }
+    case "pyproject.toml": {
+      let section = "";
+      lines2.forEach((raw, i) => {
+        if (raw.trimStart().startsWith("[")) {
+          section = TOML_SECTION.exec(raw)?.[1] ?? "";
+          return;
+        }
+        const m = section === "project" ? REQUIRES_PYTHON.exec(raw) : null;
+        const floor = m ? pythonFloor(m[1]) : void 0;
+        if (floor) out.push({ kind: "python", value: floor, line: i + 1 });
+      });
+      break;
+    }
+    case "serverless.yml":
+    case "serverless.yaml":
+    case "template.yaml":
+    case "template.yml": {
+      const sam = name.startsWith("template.");
+      if (sam && !text.includes("AWS::")) break;
+      lines2.forEach((raw, i) => {
+        const m = (sam ? SAM_RUNTIME : SERVERLESS_RUNTIME).exec(raw);
+        if (m && LAMBDA_RUNTIME.test(m[1]))
+          out.push({ kind: "lambda", value: m[1], line: i + 1 });
+      });
+      break;
+    }
+  }
+  return out.slice(0, MAX_DECLARATIONS);
+};
+var RuntimeMatcher = class {
+  needles = /* @__PURE__ */ new Map();
+  declared = [];
+  vercelDirs = /* @__PURE__ */ new Set();
+  constructor(feed2) {
+    for (const event of liveEvents(feed2)) {
+      if (event.kind === "feature" || event.kind === "notice") continue;
+      for (const target3 of event.affects) {
+        if (target3.type !== "symbol") continue;
+        for (const symbol2 of target3.values) {
+          const runtime = runtimeSymbol(event.vendor, symbol2);
+          if (!runtime) continue;
+          const key = `${runtime.kind}|${runtime.value}`;
+          this.needles.set(key, [
+            ...this.needles.get(key) ?? [],
+            { event, symbol: symbol2, vercel: runtime.vercel === true }
+          ]);
+        }
+      }
+    }
+  }
+  scanFile(file2) {
+    const name = basename2(file2.path);
+    if (name === "vercel.json") this.vercelDirs.add(dirname3(file2.path));
+    if (this.needles.size === 0 || !RUNTIME_FILES.has(name)) return;
+    for (const runtime of declaredRuntimes(file2.path, file2.text))
+      this.declared.push({ path: file2.path, runtime });
+  }
+  findings() {
+    const out = [];
+    const seen = /* @__PURE__ */ new Set();
+    for (const { path, runtime } of this.declared) {
+      for (const needle of this.needles.get(`${runtime.kind}|${runtime.value}`) ?? []) {
+        if (needle.vercel && !(runtime.engines && (this.vercelDirs.has(dirname3(path)) || this.vercelDirs.has(""))))
+          continue;
+        const key = `${path}|${needle.event.id}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        out.push({
+          event: needle.event,
+          via: "runtime",
+          token: needle.symbol,
+          path,
+          line: runtime.line,
+          context: configContextOf(path)
+        });
+      }
+    }
+    return out;
+  }
+};
+
 // src/walk.ts
 import { existsSync as existsSync2, lstatSync as lstatSync3, readdirSync as readdirSync2, readFileSync as readFileSync4 } from "node:fs";
 import { join as join4 } from "node:path";
@@ -14146,14 +14376,17 @@ var scan = (root, feed2, options = {}) => {
   const findings = [];
   const usage = /* @__PURE__ */ new Map();
   const matcher = new Matcher(feed2);
+  const runtimes = new RuntimeMatcher(feed2);
   const inventory2 = new InventoryCollector();
   for (const file2 of walk(root, stats, {
     ...options,
     onLockfile: (lock) => inventory2.add(lock.path, lock.text)
   })) {
     matcher.scanFile(file2, findings, usage);
+    runtimes.scanFile(file2);
     inventory2.add(file2.path, file2.text);
   }
+  findings.push(...runtimes.findings());
   return {
     findings,
     usage: [...usage.values()].sort((a, b) => a.vendor.id.localeCompare(b.vendor.id)),

@@ -17,7 +17,27 @@ $ npx harbyn scan
 Every finding links to the vendor's own announcement.
 
 Dependabot tracks package versions. This tracks what your code does with the vendor: the model it asks for, the API
-version it pins, the endpoint it calls.
+version it pins, the endpoint it calls, the runtime it deploys on.
+
+### Runtime deadlines
+
+End-of-life and deprecation dates of Node.js, Python and AWS Lambda runtimes are matched against the runtime versions
+the repository declares, read only from these files:
+
+| File                                | Read                                                                      | Matched against                     |
+| ----------------------------------- | ------------------------------------------------------------------------- | ----------------------------------- |
+| `package.json`                      | `engines.node`, the lowest major the range allows                         | Node.js end of life                 |
+| `.nvmrc`, `.node-version`           | the first line, a version number (`22`, `v22.11.0`)                       | Node.js end of life                 |
+| `.python-version`                   | lines with a version number (`3.11`, `3.11.4`)                            | Python end of life                  |
+| `runtime.txt`                       | `python-3.11.4`                                                           | Python end of life                  |
+| `pyproject.toml`                    | `requires-python` in `[project]`, the lowest version                      | Python end of life                  |
+| `serverless.yml`, `serverless.yaml` | every `runtime:` value that is a Lambda runtime id                        | AWS Lambda runtime deprecations     |
+| `template.yaml`, `template.yml`     | every `Runtime:` value, in templates that use `AWS::`                     | AWS Lambda runtime deprecations     |
+| `package.json`                      | `engines.node`, when a `vercel.json` is next to it or at the scanned root | Vercel Node.js version deprecations |
+
+They are read as plain text, line by line (`package.json` as JSON), and never evaluated. Version aliases such as
+`lts/*` or `node` are not resolved. Google Cloud runtimes are not matched: they are chosen by deploy flags rather than a
+file in the repository.
 
 ## CLI
 

@@ -247,6 +247,34 @@ const deadlineOpen = (e: Dated, today: string): boolean => {
   return true;
 };
 
+export const isDeadline = (e: Pick<ChangeEvent, "kind"> & Dated): boolean =>
+  e.kind !== "feature" && deadlineOf(e) !== undefined;
+
+export const ANNOUNCED_LAUNCH_DAYS = 180;
+
+export const launchState = (
+  e: Pick<ChangeEvent, "id" | "kind" | "status" | "announcedAt"> & Dated,
+  today: string,
+  superseded: ReadonlySet<string>,
+): { state: "coming" } | { state: "arrived"; on: string } | { state: "hidden" } => {
+  if (
+    e.kind !== "feature" ||
+    e.status === "retracted" ||
+    e.status === "cancelled" ||
+    superseded.has(e.id)
+  )
+    return { state: "hidden" };
+  if (e.status !== "announced") return { state: "arrived", on: e.announcedAt };
+  const d = deadlineOf(e);
+  if (d === undefined)
+    return daysBetween(e.announcedAt, today) <= ANNOUNCED_LAUNCH_DAYS
+      ? { state: "coming" }
+      : { state: "hidden" };
+  return deadlineOpen(e, today) && (d.precision === "month" || d.date > today)
+    ? { state: "coming" }
+    : { state: "arrived", on: d.date };
+};
+
 export const isAlertable = (e: ChangeEvent, today: string): boolean =>
   (e.status === "announced" || e.status === "in-effect") &&
   !isBackfill(e) &&
