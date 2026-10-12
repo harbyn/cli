@@ -236,6 +236,30 @@ describe("scan", () => {
   });
 });
 
+describe("replacement and nested repositories (ADR 0035)", () => {
+  it("scan, explain and plan_fix say what to move to in one line; scan names the nested repositories it skipped", async () => {
+    const { call } = setup(
+      repo({
+        "vendored/app/.git/HEAD": "ref: refs/heads/main\n",
+        "vendored/app/src/ai.ts": 'client.create({ model: "acme-1" });\n',
+      }),
+    );
+    const r = await call("scan");
+    const ai = (
+      r.structured.findings as Array<{ path: string; nextStep: string; replacement: string[] }>
+    ).find((f) => f.path === "src/ai.ts");
+    expect(ai).toMatchObject({ nextStep: "Migrate to: acme-2", replacement: ["acme-2"] });
+    expect(r.structured.skippedNestedRepos).toEqual(["vendored/app"]);
+    expect(onlyFenced(r.text, "Skipped 1 nested repository: vendored/app")).toBe(true);
+    expect(r.text).toContain("; Migrate to: acme-2;");
+    const explained = await call("explain", { eventId: EVENTS.swap });
+    expect(explained.structured.nextStep).toBe("Migrate to: acme-2");
+    const plan = await call("plan_fix", { eventId: EVENTS.swap });
+    expect(plan.structured.nextStep).toBe("Migrate to: acme-2");
+    expect(plan.text).toContain("Migrate to: acme-2");
+  });
+});
+
 describe("explain", () => {
   it("returns the change's facts, deadline, replacement, review state and links", async () => {
     const r = await setup(repo()).call("explain", { eventId: EVENTS.swap });

@@ -67,7 +67,7 @@ const commands = (lines: string[]): string[] => lines.join("\n").split("\n");
 describe("annotations", () => {
   it("puts the finding on its file and line with the deadline, replacement and source", () => {
     expect(toAnnotations(result([finding()]), TODAY)).toEqual([
-      "::warning file=src/a.ts,line=3,title=Acme%3A acme-1 retired::acme-1: in 68 days (2026-12-01). Use instead: acme-2. Source: https://acme.example/changelog",
+      "::warning file=src/a.ts,line=3,title=Acme%3A acme-1 retired::acme-1: in 68 days (2026-12-01). Migrate to: acme-2. Source: https://acme.example/changelog",
     ]);
   });
 

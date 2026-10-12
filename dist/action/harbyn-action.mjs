@@ -4830,10 +4830,10 @@ function partPattern(schema) {
   const own2 = schema._zod.pattern?.source;
   const inner = def.innerType ?? schema._zod.innerType;
   if (inner) {
-    const before = inner._zod.pattern?.source;
+    const before2 = inner._zod.pattern?.source;
     const after = partPattern(inner);
-    if (own2 && before && after && after !== before) {
-      return own2.replace(cleanRegex(before), () => cleanRegex(after));
+    if (own2 && before2 && after && after !== before2) {
+      return own2.replace(cleanRegex(before2), () => cleanRegex(after));
     }
     return own2;
   }
@@ -12875,7 +12875,7 @@ import { join as join2 } from "node:path";
 
 // src/product.ts
 var CLI_NAME = "harbyn";
-var CLI_VERSION = true ? "0.10.0" : "0.0.0-dev";
+var CLI_VERSION = true ? "0.11.0" : "0.0.0-dev";
 var PAID_FIX_MESSAGE = `Automatic fixes and SDK migrations are part of Harbyn Pro and Team.
 Switch them on for a repository from the dashboard, no terminal needed: https://harbyn.com/pricing
 This open-source CLI finds what will break and where: run \`${CLI_NAME} scan\`.`;
@@ -13188,16 +13188,74 @@ var deadlineLabel = (event, today2) => {
     if (days2 <= 0) return `THIS MONTH (${label})`;
     return `in about ${days2} days (${label})`;
   }
-  if (!event.effectiveAt) return "no date announced yet";
+  if (!event.effectiveAt)
+    return event.kind === "security" && event.status !== "announced" ? "now (security advisory, no deadline)" : "no date announced yet";
   const days = daysBetween(today2, event.effectiveAt);
   if (days < 0) return `ALREADY IN EFFECT since ${event.effectiveAt} (${-days} days ago)`;
   if (days === 0) return `TODAY (${event.effectiveAt})`;
   return `in ${days} days (${event.effectiveAt})`;
 };
+var floorOf = (range) => {
+  const m = /^>=?(\d{1,6}(?:\.\d{1,6}){0,2})$/.exec(range.trim());
+  return m ? parseVersion(m[1]) : void 0;
+};
+var before = (a, b) => a[0] - b[0] < 0 || a[0] === b[0] && (a[1] - b[1] < 0 || a[1] === b[1] && a[2] < b[2]);
+var packageTargets = (targets, finding) => {
+  const all = targets.filter((t) => t.type === "package");
+  if (!finding || finding.via !== "package") return all;
+  const at = finding.token.lastIndexOf("@");
+  const name = finding.token.slice(0, at);
+  const declared = parseVersion(finding.token.slice(at + 1));
+  const same = all.filter((t) => t.name === name);
+  if (!declared || same.length === 0) return all;
+  const above = same.map((t) => ({ t, floor: floorOf(t.range) })).filter(
+    (x) => x.floor !== void 0 && before(declared, x.floor)
+  ).sort((a, b) => before(a.floor, b.floor) ? -1 : before(b.floor, a.floor) ? 1 : 0);
+  return above.length > 0 ? [above[0].t] : same;
+};
+var targetText = (t) => {
+  switch (t.type) {
+    case "package":
+      return [`${t.name} ${t.range}`];
+    case "endpoint":
+      return [`${t.method} ${t.path}`];
+    default:
+      return t.values;
+  }
+};
+var replacementOf = (event, finding) => {
+  const targets = event.replacement?.targets ?? [];
+  const note = event.replacement?.note;
+  const packages = packageTargets(targets, finding);
+  if (packages.length > 0)
+    return { label: "Upgrade to", text: packages.flatMap(targetText).join(" or ") };
+  const others = targets.filter((t) => t.type !== "package");
+  if (note && others.every((t) => t.type === "symbol"))
+    return { label: others.length > 0 ? "Migrate to" : "What to do", text: note };
+  if (others.length > 0)
+    return {
+      label: "Migrate to",
+      text: `${others.flatMap(targetText).join(", ")}${note ? ` (${note})` : ""}`
+    };
+  return void 0;
+};
+var NO_REPLACEMENT = "Replacement: none named yet, by the vendor or by Harbyn; check the source before changing anything";
+var replacementLine = (event, finding) => {
+  const r = replacementOf(event, finding);
+  return r ? `${r.label}: ${r.text}` : NO_REPLACEMENT;
+};
+var replacementTargets = (event, finding) => {
+  const targets = event.replacement?.targets ?? [];
+  return [
+    ...packageTargets(targets, finding),
+    ...targets.filter((t) => t.type !== "package")
+  ].flatMap(targetText);
+};
 var toJson = (result2) => ({
   schemaVersion: 1,
   stats: result2.stats,
   vendors: result2.usage.map((u) => ({ id: u.vendor.id, evidence: [...u.evidence].sort() })),
+  skippedNestedRepos: result2.stats.skippedNestedRepos,
   findings: result2.findings.map((f) => ({
     eventId: f.event.id,
     kind: f.event.kind,
@@ -13209,7 +13267,9 @@ var toJson = (result2) => ({
     token: f.token,
     path: f.path,
     line: f.line,
-    replacement: f.event.replacement?.targets.flatMap((t) => "values" in t ? t.values : []) ?? [],
+    replacement: replacementTargets(f.event, f),
+    replacementNote: f.event.replacement?.note ?? null,
+    nextStep: replacementLine(f.event, f),
     source: f.event.sources[0]?.url ?? null
   })),
   dependencies: result2.inventory?.dependencies ?? []
@@ -13229,7 +13289,10 @@ var levelOf = (finding, today2) => {
   const deadline = deadlineOf(finding.event)?.date;
   return deadline !== void 0 && deadline <= today2 ? "error" : "warning";
 };
-var replacementOf = (finding) => finding.event.replacement?.targets.flatMap((t) => "values" in t ? t.values : []) ?? [];
+var replacementOf2 = (finding) => {
+  const r = replacementOf(finding.event, finding);
+  return r ? `${r.label}: ${r.text}` : "";
+};
 var repoPath = (path, prefix) => prefix ? `${prefix}/${path}` : path;
 var byDeadline = (a, b) => (deadlineOf(a.event)?.date ?? "9999").localeCompare(deadlineOf(b.event)?.date ?? "9999") || a.path.localeCompare(b.path) || a.line - b.line;
 var toAnnotations = (result2, today2, pathPrefix2 = "") => {
@@ -13239,10 +13302,10 @@ var toAnnotations = (result2, today2, pathPrefix2 = "") => {
     const level = levelOf(finding, today2);
     if (shown[level] >= MAX_ANNOTATIONS_PER_LEVEL) continue;
     shown[level] += 1;
-    const replacement = replacementOf(finding);
+    const replacement = replacementOf2(finding);
     const message = [
       `${safe(finding.token)}: ${deadlineLabel(finding.event, today2)}.`,
-      replacement.length > 0 ? `Use instead: ${safe(replacement.join(", "))}.` : "",
+      replacement ? `${safe(replacement)}.` : "No replacement named yet.",
       `Source: ${safe(finding.event.sources[0]?.url ?? "-")}`
     ].filter(Boolean).join(" ");
     const props = `file=${escapeProperty(safe(repoPath(finding.path, pathPrefix2)))},line=${finding.line},title=${escapeProperty(cap(safe(finding.event.title), MAX_TITLE))}`;
@@ -13268,9 +13331,9 @@ var toStepSummary = (result2, today2, productName, pathPrefix2 = "", uploading =
     );
     out.push("| When | Change | Where | Use instead | |", "| --- | --- | --- | --- | --- |");
     for (const f of findings.slice(0, MAX_SUMMARY_ROWS)) {
-      const replacement = replacementOf(f);
+      const replacement = replacementOf2(f);
       out.push(
-        `| ${mdText(deadlineLabel(f.event, today2))} | ${mdText(f.event.title)} | ${mdText(`${repoPath(f.path, pathPrefix2)}:${f.line}`)} ${mdText(f.token)} | ${replacement.length > 0 ? mdText(replacement.join(", ")) : "-"} | ${mdLink(f.event.sources[0]?.url)} |`
+        `| ${mdText(deadlineLabel(f.event, today2))} | ${mdText(f.event.title)} | ${mdText(`${repoPath(f.path, pathPrefix2)}:${f.line}`)} ${mdText(f.token)} | ${replacement ? mdText(replacement) : "-"} | ${mdLink(f.event.sources[0]?.url)} |`
       );
     }
     out.push("");
@@ -13311,8 +13374,8 @@ var findToken = (line, token, variantSuffixes = []) => {
     const at = line.indexOf(token, from);
     if (at === -1) return void 0;
     from = at + 1;
-    const before = line[at - 1];
-    if (isIdChar(before) || before === "." || before === "/") continue;
+    const before2 = line[at - 1];
+    if (isIdChar(before2) || before2 === "." || before2 === "/") continue;
     let end = at + token.length;
     const suffix = variantSuffixes.find((s) => line.startsWith(s, end));
     if (suffix) end += suffix.length;
@@ -13347,6 +13410,19 @@ var liveEvents = (feed2) => {
   );
   return feed2.events.filter(
     (e) => (e.status === "announced" || e.status === "in-effect") && !superseded.has(e.id)
+  );
+};
+var isAdvisory = (e) => e.kind === "security" && e.review.extractedBy === "deterministic" && /^https:\/\/github\.com\/advisories\/GHSA-[a-z0-9-]{14}$/.test(e.link ?? "");
+var packageOf = (f) => f.token.slice(0, Math.max(0, f.token.lastIndexOf("@")));
+var preferAdvisories = (findings) => {
+  const covered = new Set(
+    findings.filter((f) => f.via === "package" && isAdvisory(f.event)).map((f) => `${f.path}
+${packageOf(f)}`)
+  );
+  if (covered.size === 0) return findings;
+  return findings.filter(
+    (f) => !(f.via === "package" && f.event.kind === "security" && !isAdvisory(f.event) && covered.has(`${f.path}
+${packageOf(f)}`))
   );
 };
 var VERSION_KEYWORDS = ["apiversion", "api_version", "api-version"];
@@ -14444,7 +14520,7 @@ var scan = (root, feed2, options = {}) => {
   }
   findings.push(...runtimes.findings());
   return {
-    findings,
+    findings: preferAdvisories(findings),
     usage: [...usage.values()].sort((a, b) => a.vendor.id.localeCompare(b.vendor.id)),
     stats,
     inventory: inventory2.result()

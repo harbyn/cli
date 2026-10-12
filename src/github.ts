@@ -1,6 +1,12 @@
 import { deadlineOf } from "./schema/index.ts";
 import type { Finding } from "./match.ts";
-import { actionable, deadlineLabel, type ScanResult, safe } from "./report.ts";
+import {
+  actionable,
+  deadlineLabel,
+  replacementOf as replacementView,
+  type ScanResult,
+  safe,
+} from "./report.ts";
 
 export const MAX_ANNOTATIONS_PER_LEVEL = 10;
 export const MAX_SUMMARY_ROWS = 500;
@@ -24,8 +30,10 @@ export const levelOf = (finding: Finding, today: string): Level => {
   return deadline !== undefined && deadline <= today ? "error" : "warning";
 };
 
-const replacementOf = (finding: Finding): string[] =>
-  finding.event.replacement?.targets.flatMap((t) => ("values" in t ? t.values : [])) ?? [];
+const replacementOf = (finding: Finding): string => {
+  const r = replacementView(finding.event, finding);
+  return r ? `${r.label}: ${r.text}` : "";
+};
 
 const repoPath = (path: string, prefix: string): string => (prefix ? `${prefix}/${path}` : path);
 
@@ -44,7 +52,7 @@ export const toAnnotations = (result: ScanResult, today: string, pathPrefix = ""
     const replacement = replacementOf(finding);
     const message = [
       `${safe(finding.token)}: ${deadlineLabel(finding.event, today)}.`,
-      replacement.length > 0 ? `Use instead: ${safe(replacement.join(", "))}.` : "",
+      replacement ? `${safe(replacement)}.` : "No replacement named yet.",
       `Source: ${safe(finding.event.sources[0]?.url ?? "-")}`,
     ]
       .filter(Boolean)
@@ -86,7 +94,7 @@ export const toStepSummary = (
     for (const f of findings.slice(0, MAX_SUMMARY_ROWS)) {
       const replacement = replacementOf(f);
       out.push(
-        `| ${mdText(deadlineLabel(f.event, today))} | ${mdText(f.event.title)} | ${mdText(`${repoPath(f.path, pathPrefix)}:${f.line}`)} ${mdText(f.token)} | ${replacement.length > 0 ? mdText(replacement.join(", ")) : "-"} | ${mdLink(f.event.sources[0]?.url)} |`,
+        `| ${mdText(deadlineLabel(f.event, today))} | ${mdText(f.event.title)} | ${mdText(`${repoPath(f.path, pathPrefix)}:${f.line}`)} ${mdText(f.token)} | ${replacement ? mdText(replacement) : "-"} | ${mdLink(f.event.sources[0]?.url)} |`,
       );
     }
     out.push("");

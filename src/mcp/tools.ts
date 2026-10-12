@@ -13,7 +13,14 @@ import {
 import { z } from "zod";
 import type { Finding } from "../match.ts";
 import { CLI_NAME, CLI_VERSION } from "../product.ts";
-import { deadlineLabel, safe, sortKey } from "../report.ts";
+import {
+  deadlineLabel,
+  nestedNotice,
+  replacementLine,
+  replacementTargets,
+  safe,
+  sortKey,
+} from "../report.ts";
 import { isSensitive } from "../sensitive.ts";
 import type { McpContext } from "./context.ts";
 import { PathRefused, readInside, resolveInside } from "./paths.ts";
@@ -111,7 +118,14 @@ const findingOut = z.object({
   token: z.string().describe("The identifier that matched"),
   via: z.string(),
   context: z.enum(["code", "test", "docs", "catalog"]),
-  replacement: z.array(z.string()).describe("What the vendor says to use instead"),
+  replacement: z
+    .array(z.string())
+    .describe("What to use instead: identifiers, or packages with the fixed versions"),
+  nextStep: z
+    .string()
+    .describe(
+      'What to move to, in one line ("Upgrade to: next >=16.3.8"), or a line saying none is known yet',
+    ),
   alertOnly: z
     .boolean()
     .describe(
@@ -150,6 +164,11 @@ const scanTool = (ctx: McpContext) =>
         z.object({ id: z.string(), name: z.string(), evidence: z.array(z.string()) }),
       ),
       filesScanned: z.number().int(),
+      skippedNestedRepos: z
+        .array(z.string())
+        .describe(
+          "Directories that are their own repository and were not scanned: run the scan inside each",
+        ),
       secretFilesSkipped: z.number().int(),
       partial: z.boolean().describe("The file limit was reached"),
       feedGeneratedAt: z.string(),
@@ -203,7 +222,10 @@ const scanTool = (ctx: McpContext) =>
           token: clean(f.token, 200),
           via: f.via,
           context: f.context,
-          replacement: identifiers(f.event.replacement?.targets ?? []),
+          replacement: replacementTargets(f.event, f)
+            .slice(0, 16)
+            .map((v) => clean(v, 200)),
+          nextStep: clean(replacementLine(f.event, f)),
           alertOnly:
             sensitive.get(f.path) === true || vendors.get(f.event.vendor)?.alertOnly === true,
         };
@@ -223,6 +245,9 @@ const scanTool = (ctx: McpContext) =>
             .map((e) => clean(e, 200)),
         })),
         filesScanned: result.stats.scanned,
+        skippedNestedRepos: result.stats.skippedNestedRepos
+          .slice(0, MAX_ITEMS)
+          .map((p) => clean(p, 1024)),
         secretFilesSkipped: result.stats.skippedSecret,
         partial: result.stats.truncated,
         feedGeneratedAt: feed.generatedAt,
@@ -232,6 +257,9 @@ const scanTool = (ctx: McpContext) =>
         ...(data.hiddenLowConfidence > 0
           ? [`${data.hiddenLowConfidence} more in tests, docs and catalogs (all: true lists them).`]
           : []),
+        ...(data.skippedNestedRepos.length > 0
+          ? fence("nested repositories", [nestedNotice(data.skippedNestedRepos) as string])
+          : []),
         ...(findings.length > 0
           ? [
               "Findings (paths, identifiers and titles come from the repository and the feed):",
@@ -239,7 +267,7 @@ const scanTool = (ctx: McpContext) =>
                 "findings",
                 findings.map(
                   (f) =>
-                    `${f.path}:${f.line} ${f.token} [${f.severity} ${f.kind}] ${f.title}; ${f.deadline}${f.replacement.length ? `; use ${f.replacement.join(", ")}` : ""}${f.alertOnly ? "; ALERT-ONLY" : ""}; ${f.findingId} ${f.eventId}`,
+                    `${f.path}:${f.line} ${f.token} [${f.severity} ${f.kind}] ${f.title}; ${f.deadline}; ${f.nextStep}${f.alertOnly ? "; ALERT-ONLY" : ""}; ${f.findingId} ${f.eventId}`,
                 ),
               ),
             ]
@@ -285,6 +313,9 @@ const explainTool = (ctx: McpContext) =>
       replacement: z
         .object({ identifiers: z.array(z.string()), note: z.string().nullable() })
         .nullable(),
+      nextStep: z
+        .string()
+        .describe("What to move to, in one line, or a line saying none is known yet"),
       reviewed: z
         .boolean()
         .describe(
@@ -326,6 +357,7 @@ const explainTool = (ctx: McpContext) =>
               note: e.replacement.note ? clean(e.replacement.note) : null,
             }
           : null,
+        nextStep: clean(replacementLine(e)),
         reviewed: reviewed(e),
         reviewState: `${e.review.state}, ${e.review.extractedBy}`,
         alertOnlyVendor: vendor?.alertOnly === true,
@@ -338,11 +370,7 @@ const explainTool = (ctx: McpContext) =>
           `${data.vendorName}: ${data.title}`,
           data.summary,
           ...(data.affects.length ? [`affects: ${data.affects.join(", ")}`] : []),
-          ...(data.replacement
-            ? [
-                `use instead: ${[...data.replacement.identifiers, ...(data.replacement.note ? [data.replacement.note] : [])].join("; ")}`,
-              ]
-            : []),
+          data.nextStep,
         ]),
         `source: ${data.source}`,
         `harbyn: ${data.harbynUrl}`,
@@ -423,6 +451,9 @@ const planTool = (ctx: McpContext) => {
       mode: z.enum(["recipe", "swap", "model-needed", "alert-only", "not-reviewed"]),
       risk: z.enum(["low", "medium", "high"]),
       replacement: z.array(z.string()),
+      nextStep: z
+        .string()
+        .describe("What to move to, in one line, or a line saying none is known yet"),
       locations: z.array(locationOut),
       guidance: z.string(),
       evidence: z.object({
@@ -564,6 +595,7 @@ const planTool = (ctx: McpContext) => {
         mode,
         risk: riskOf(event, mode),
         replacement,
+        nextStep: clean(replacementLine(event, all[0])),
         locations,
         guidance: GUIDANCE[mode],
         evidence: {
@@ -584,7 +616,7 @@ const planTool = (ctx: McpContext) => {
         GUIDANCE[mode],
         ...fence("locations", [
           data.title,
-          ...(replacement.length ? [`replacement: ${replacement.join(", ")}`] : []),
+          data.nextStep,
           ...locations.map(
             (l) =>
               `${l.path}:${l.line} ${l.token}${l.editable ? "" : l.alertOnly ? " (alert-only: do not edit)" : ` (${l.context}: leave to the person)`}`,

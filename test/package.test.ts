@@ -437,7 +437,7 @@ describe("GitHub Action", () => {
     const r = runAction(withFeed());
     expect(r.status, r.stderr).toBe(0);
     expect(r.stdout).toMatch(
-      /^::warning file=src\/ai\.ts,line=2,title=acme-1 retired::acme-1: in \d+ days \(2099-01-01\)\. Use instead: acme-2\./m,
+      /^::warning file=src\/ai\.ts,line=2,title=acme-1 retired::acme-1: in \d+ days \(2099-01-01\)\. Migrate to: acme-2\./m,
     );
     expect(r.outputs).toMatch(/^findings=1$/m);
     expect(r.outputs).toMatch(/^report=.+harbyn-report\.json$/m);

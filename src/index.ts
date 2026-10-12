@@ -1,5 +1,5 @@
 import type { FeedIndex } from "./schema/index.ts";
-import { type Finding, Matcher, type VendorUsage } from "./match.ts";
+import { type Finding, Matcher, preferAdvisories, type VendorUsage } from "./match.ts";
 import { InventoryCollector } from "./inventory.ts";
 import type { ScanResult } from "./report.ts";
 import { RuntimeMatcher } from "./runtimes.ts";
@@ -34,7 +34,7 @@ export const scan = (root: string, feed: FeedIndex, options: WalkOptions = {}): 
   }
   findings.push(...runtimes.findings());
   return {
-    findings,
+    findings: preferAdvisories(findings),
     usage: [...usage.values()].sort((a, b) => a.vendor.id.localeCompare(b.vendor.id)),
     stats,
     inventory: inventory.result(),

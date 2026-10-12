@@ -116,6 +116,31 @@ export const liveEvents = (feed: FeedIndex): ChangeEvent[] => {
   );
 };
 
+export const isAdvisory = (e: ChangeEvent): boolean =>
+  e.kind === "security" &&
+  e.review.extractedBy === "deterministic" &&
+  /^https:\/\/github\.com\/advisories\/GHSA-[a-z0-9-]{14}$/.test(e.link ?? "");
+
+const packageOf = (f: Finding): string => f.token.slice(0, Math.max(0, f.token.lastIndexOf("@")));
+
+export const preferAdvisories = (findings: Finding[]): Finding[] => {
+  const covered = new Set(
+    findings
+      .filter((f) => f.via === "package" && isAdvisory(f.event))
+      .map((f) => `${f.path}\n${packageOf(f)}`),
+  );
+  if (covered.size === 0) return findings;
+  return findings.filter(
+    (f) =>
+      !(
+        f.via === "package" &&
+        f.event.kind === "security" &&
+        !isAdvisory(f.event) &&
+        covered.has(`${f.path}\n${packageOf(f)}`)
+      ),
+  );
+};
+
 const VERSION_KEYWORDS = ["apiversion", "api_version", "api-version"];
 
 export class Matcher {
