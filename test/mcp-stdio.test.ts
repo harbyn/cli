@@ -1,5 +1,12 @@
 import { type ChildProcessWithoutNullStreams, spawn } from "node:child_process";
-import { mkdtempSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  realpathSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -102,7 +109,7 @@ afterEach(() => {
 });
 
 describe("harbyn mcp over stdio", () => {
-  it("handshake, four read-only tools, a scan, and a clean exit when stdin closes", async () => {
+  it("handshake, the tools with honest annotations, a scan, and a clean exit when stdin closes", async () => {
     const dir = repo();
     const c = start(["--feed-dir", feedDir(), "--root", dir], tmpdir());
     const init = await c.initialize();
@@ -117,9 +124,18 @@ describe("harbyn mcp over stdio", () => {
       name: string;
       annotations: Record<string, unknown>;
     }>;
-    expect(tools.map((t) => t.name)).toEqual(["scan", "explain", "plan_fix", "status"]);
-    for (const t of tools)
-      expect(t.annotations).toMatchObject({ readOnlyHint: true, destructiveHint: false });
+    expect(tools.map((t) => t.name)).toEqual([
+      "scan",
+      "explain",
+      "plan_fix",
+      "apply_fix",
+      "run_checks",
+      "status",
+    ]);
+    for (const t of tools) {
+      const acts = t.name === "apply_fix" || t.name === "run_checks";
+      expect(t.annotations, t.name).toMatchObject({ readOnlyHint: !acts, destructiveHint: acts });
+    }
     const scan = await c.request(2, "tools/call", { name: "scan", arguments: {} });
     const findings = (
       scan.result?.structuredContent as { findings: Array<{ path: string; findingId: string }> }
@@ -162,6 +178,73 @@ describe("harbyn mcp over stdio", () => {
     expect(JSON.stringify(scan.result)).toMatch(/git work tree/);
   });
 
+  it("elicitation end to end: run_checks asks the person through the client's form; yes runs it, no does not", async () => {
+    const dir = repo();
+    const marker = join(dir, "ran.txt");
+    const cache = mkdtempSync(join(tmpdir(), "mcp-cache-"));
+    mkdirSync(join(cache, "harbyn"), { recursive: true });
+    const script = `require("node:fs").appendFileSync(${JSON.stringify(marker)}, "x"); console.log("checks ran")`;
+    writeFileSync(
+      join(cache, "harbyn", "mcp-settings.json"),
+      JSON.stringify({
+        projects: { [realpathSync(dir)]: { test: [process.execPath, "-e", script] } },
+      }),
+    );
+    const child = spawn(
+      process.execPath,
+      [join(root, "src", "cli.ts"), "mcp", "--feed-dir", feedDir(), "--root", dir],
+      {
+        cwd: tmpdir(),
+        env: {
+          ...process.env,
+          LOCALAPPDATA: cache,
+          XDG_CACHE_HOME: cache,
+          APPDATA: cache,
+          XDG_CONFIG_HOME: cache,
+        },
+      },
+    );
+    const c = new Client(child);
+    started.push(c);
+    await c.initialize({ elicitation: { form: {} } });
+
+    const askedNo = c.next((m) => m.method === "elicitation/create");
+    const declined = c.request(1, "tools/call", {
+      name: "run_checks",
+      arguments: { check: "test" },
+    });
+    const no = await askedNo;
+    expect(no.params).toMatchObject({ mode: "form", requestedSchema: { required: ["confirm"] } });
+    expect(String(no.params?.message)).toContain(process.execPath.split(/[\\/]/).pop());
+    c.send({ jsonrpc: "2.0", id: no.id, result: { action: "decline" } });
+    expect((await declined).result?.structuredContent).toMatchObject({
+      status: "declined",
+      exitCode: null,
+    });
+    expect(existsSync(marker)).toBe(false);
+
+    const askedYes = c.next((m) => m.method === "elicitation/create");
+    const ran = c.request(2, "tools/call", {
+      name: "run_checks",
+      arguments: { check: "test", confirmationToken: `hc_${"0".repeat(32)}` },
+    });
+    const yes = await askedYes;
+    c.send({
+      jsonrpc: "2.0",
+      id: yes.id,
+      result: { action: "accept", content: { confirm: true } },
+    });
+    const result = (await ran).result?.structuredContent as {
+      status: string;
+      exitCode: number;
+      output: string;
+      confirmation: unknown;
+    };
+    expect(result).toMatchObject({ status: "ran", exitCode: 0, confirmation: null });
+    expect(result.output).toContain("checks ran");
+    expect(readFileSync(marker, "utf8")).toBe("x");
+  });
+
   it("abuse: garbage, batches, early calls, unknown methods and tools, oversized lines; still serving after", async () => {
     const c = start(["--feed-dir", feedDir(), "--root", repo()], tmpdir());
     const early = await c.request(1, "tools/call", { name: "scan", arguments: {} });
@@ -184,9 +267,9 @@ describe("harbyn mcp over stdio", () => {
     await big;
     await c.initialize();
     expect((await c.request(2, "resources/list")).error?.code).toBe(-32601);
-    expect(
-      (await c.request(3, "tools/call", { name: "apply_fix", arguments: {} })).error?.code,
-    ).toBe(-32602);
+    expect((await c.request(3, "tools/call", { name: "open_pr", arguments: {} })).error?.code).toBe(
+      -32602,
+    );
     expect(
       (await c.request(4, "tools/call", { name: "scan", arguments: { path: "../../.." } })).result
         ?.isError,

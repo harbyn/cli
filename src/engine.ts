@@ -62,6 +62,54 @@ export interface EngineFixInput {
   print: (text: string) => void;
 }
 
+export interface EngineEdit {
+  path: string;
+  line: number;
+  before: string;
+  after: string;
+}
+
+export interface EnginePlanInput {
+  result: ScanResult;
+  feed: FeedIndex;
+  knowledge: EngineKnowledge;
+  eventId: string;
+  read: (path: string) => string | undefined;
+}
+
+export interface EnginePlan {
+  mode: "swap" | "recipe" | "model-needed" | "none";
+  recipeId: string | null;
+  edits: EngineEdit[];
+  skipped: Array<{ path: string; line: number; reason: string }>;
+  reason: string | null;
+  context: {
+    notes: string[];
+    windows: Array<{ path: string; from: number; lines: string[] }>;
+  } | null;
+}
+
+export interface EngineValidateInput {
+  result: ScanResult;
+  feed: FeedIndex;
+  knowledge: EngineKnowledge;
+  eventId: string;
+  edits: unknown;
+  read: (path: string) => string | undefined;
+}
+
+export type EngineValidation = { ok: true; edits: EngineEdit[] } | { ok: false; reason: string };
+
+export interface EngineApplyInput {
+  edits: EngineEdit[];
+  read: (path: string) => string | undefined;
+}
+
+export interface EngineApplyResult {
+  files: Array<{ path: string; text: string }>;
+  conflicts: Array<{ path: string; reason: string }>;
+}
+
 export interface EngineModule {
   ENGINE_ABI: number;
   runAction(input: EngineActionInput): Promise<FixReport | void>;
@@ -71,6 +119,9 @@ export interface EngineModule {
     knowledge: EngineKnowledge,
   ): Promise<number>;
   runFix?(input: EngineFixInput): Promise<number>;
+  plan?(input: EnginePlanInput): EnginePlan;
+  validateEdits?(input: EngineValidateInput): EngineValidation;
+  apply?(input: EngineApplyInput): EngineApplyResult;
 }
 
 export type EngineLoad =

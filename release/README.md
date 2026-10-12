@@ -44,10 +44,12 @@ Exit codes: `0` done, `1` findings with `--ci`, `2` the feed could not be verifi
 
 ## From your coding agent: `harbyn mcp`
 
-`harbyn mcp` is a local MCP server: your coding agent starts it on your machine and talks to it over stdio. It gives
-the agent four read-only tools for the repository it works in: `scan` (findings with file, line, deadline and
-replacement), `explain` (one change and its source), `plan_fix` (what to change, where, the risk and the evidence) and
-`status` (sign-in, plan and feed age). It changes no file; your agent makes the edit, after you agree.
+`harbyn mcp` is a local MCP server: your coding agent starts it on your machine and talks to it over stdio. Its tools
+for the repository it works in: `scan` (findings with file, line, deadline and replacement), `explain` (one change and
+its source), `plan_fix` (what to change, where, the risk and the evidence), `apply_fix` (writes a planned fix to the
+working tree; with Harbyn Pro or Team, after you confirm; on the free plan it writes nothing and your agent makes the
+edit), `run_checks` (your project's own typecheck or test command, after you confirm) and `status` (sign-in, plan and
+feed age). Never auto-approve `apply_fix` or `run_checks` in your client.
 
 ```sh
 claude mcp add harbyn-local -- npx -y harbyn mcp     # Claude Code
@@ -73,14 +75,16 @@ Cursor (`.cursor/mcp.json` or `~/.cursor/mcp.json`) and most other clients:
 `-y` stops npx waiting on an install question the client cannot answer; write `harbyn@<version>` to pin a release.
 The server works in the repository your client opens, or the one given with `--root <dir>`, and refuses a folder that
 is not a git repository, your home folder or a disk root. Payments, authentication, cryptography and CI files are
-marked alert-only and never planned for editing. Text from your code and from the feed is returned as untrusted data.
-Its only network requests are the signed feed and, after `harbyn login`, Harbyn's API (your plan, and the paid
-engine's exact preview of a fix). The four tools only read, so they are safe to approve automatically.
+marked alert-only and never edited. Text from your code and from the feed is returned as untrusted data. Its only
+network requests are the signed feed and, after `harbyn login`, Harbyn's API (your plan, and the paid engine).
+`apply_fix` writes only whole lines of committed, unchanged files in the working tree, and `run_checks` runs only your
+project's own command without a shell; each asks you first. `scan`, `explain`, `plan_fix` and `status` only read.
 
 ## What it does and does not do
 
-- **Read-only.** It never writes to your project. The only file it writes is its feed cache (`%LOCALAPPDATA%\harbyn`,
-  `$XDG_CACHE_HOME/harbyn` or `~/.cache/harbyn`).
+- **Read-only scan.** `harbyn scan` never writes to your project. The only file it writes is its feed cache
+  (`%LOCALAPPDATA%\harbyn`, `$XDG_CACHE_HOME/harbyn` or `~/.cache/harbyn`). Only `harbyn fix --write` and the MCP
+  server's `apply_fix`, after you confirm, change files.
 - **Nothing about your code leaves your machine.** The one network request is the download of the change feed from
   `https://feed.harbyn.com/v1/feed.json` and its signature. There is no telemetry.
 - **Secrets are never opened.** `.env` files (except `.env.example` and similar), private keys, `.npmrc`, `.netrc` and

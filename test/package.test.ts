@@ -325,8 +325,16 @@ describe.each(["CLI", "action", "mcp"])("%s bundle contents", (which) => {
     expect(Buffer.byteLength(code())).toBeLessThan(MAX_BUNDLE_BYTES);
   });
 
-  it("cannot start processes or evaluate code", () => {
-    expect(code()).not.toMatch(/child_process|\beval\s*\(|new Function\s*\(|\bvm\b["']/);
+  it("evaluates no code; only the MCP server starts processes, from one import, without a shell", () => {
+    expect(code()).not.toMatch(/\beval\s*\(|new Function\s*\(|\bvm\b["']/);
+    if (which !== "mcp") {
+      expect(code()).not.toMatch(/child_process/);
+      return;
+    }
+    expect(code().match(/child_process/g)).toHaveLength(1);
+    expect(code()).toMatch(/import \{ spawn \} from "node:child_process";/);
+    expect(code()).not.toMatch(/shell:\s*true|\bexecSync\b|\bspawnSync\b|\bexecFileSync\b/);
+    expect(code().match(/\bspawn\(/g)).toHaveLength(2);
   });
 
   it("names no network endpoint except the documented ones", () => {
@@ -619,7 +627,7 @@ describe("harbyn mcp from the installed package", () => {
     return { status: result.status, stderr: result.stderr, answers, hosts };
   };
 
-  it("serves the four tools over stdio from the installed package", () => {
+  it("serves the six tools over stdio from the installed package", () => {
     const repo = gitRepo({ "src/ai.ts": 'const x = 1;\nclient.create({ model: "acme-1" });\n' });
     const r = run(["--feed-dir", feedDir()], repo);
     expect(r.status, r.stderr).toBe(0);
@@ -627,6 +635,8 @@ describe("harbyn mcp from the installed package", () => {
       "scan",
       "explain",
       "plan_fix",
+      "apply_fix",
+      "run_checks",
       "status",
     ]);
     expect(r.answers.get(2)?.result?.structuredContent?.findings).toEqual([

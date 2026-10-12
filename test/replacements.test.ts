@@ -244,7 +244,7 @@ describe("replacements in the scan output", () => {
 describe("nested repositories", () => {
   it("names each skipped nested repository and how to scan it, in text and JSON", () => {
     const root = repo({
-      "README.md": "monorepo\n",
+      "README.md": "workspace\n",
       "cdaher-v1-d4sign/package.json": pkg({ next: "16.3.6" }),
       "cdaher-v1-d4sign/.git/HEAD": "ref: refs/heads/main\n",
     });

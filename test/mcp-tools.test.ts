@@ -28,7 +28,9 @@ import { checkRoot, PathRefused, readInside, resolveInside } from "../src/mcp/pa
 import { DATA_RULE } from "../src/mcp/tools.ts";
 import { DEFAULT_FEED_URL } from "../src/remote-feed.ts";
 import { isSensitive } from "../src/sensitive.ts";
+import { greedyEngine, oldEngine } from "./mcp-fake-engine.ts";
 import { EVENTS, feedDir, INJECTION, repo, write } from "./mcp-fixtures.ts";
+import { paidEngine, setup as setupH } from "./mcp-harness.ts";
 
 const TODAY = "2026-10-11";
 const NOW = new Date("2026-10-11T12:00:00Z");
@@ -236,7 +238,7 @@ describe("scan", () => {
   });
 });
 
-describe("replacement and nested repositories (ADR 0035)", () => {
+describe("replacement and nested repositories", () => {
   it("scan, explain and plan_fix say what to move to in one line; scan names the nested repositories it skipped", async () => {
     const { call } = setup(
       repo({
@@ -406,107 +408,100 @@ describe("plan_fix (free)", () => {
 });
 
 describe("plan_fix (paid engine)", () => {
-  const engineKeys = () => {
-    const { privateKey, publicKey } = generateKeyPairSync("ed25519");
-    const pub = publicKeyBase64(publicKey);
-    return {
-      pem: privateKey.export({ type: "pkcs8", format: "pem" }).toString(),
-      trusted: { [keyIdOf(pub)]: pub },
-    };
-  };
-  const engineSource = `export const ENGINE_ABI = 1;
-export const runAction = async () => {};
-export const runMigrate = async () => 0;
-export const runFix = async (input) => {
-  globalThis.harbynTestWrites = (globalThis.harbynTestWrites ?? []).concat([input.write]);
-  input.print(input.result.findings.map((f) => "  " + f.path + ":" + f.line + "\\n  - " + f.token + "\\n  + acme-2").join("\\n") + "\\n${INJECTION}");
-  return 0;
-};`;
-  const paid = (opts: { whoami?: unknown; tamper?: boolean; knowledge?: unknown } = {}) => {
-    const keys = engineKeys();
-    const engine = new TextEncoder().encode(engineSource);
-    const knowledge = new TextEncoder().encode(
-      JSON.stringify(opts.knowledge ?? { schemaVersion: 1, migrations: [] }),
-    );
-    const release = buildEngineRelease({
-      commit: "c".repeat(40),
-      engine: opts.tamper ? new TextEncoder().encode("other") : engine,
-      knowledge,
-      now: NOW,
-    });
-    const n = net({
-      whoami: opts.whoami ?? { email: "person@example.com", plan: "pro", fixes: true },
-      engine: () =>
-        new Response(
-          JSON.stringify({
-            engine: Buffer.from(engine).toString("base64"),
-            knowledge: Buffer.from(knowledge).toString("base64"),
-          }),
-        ),
-      downloads: {
-        [ENGINE_RELEASE_URL]: release,
-        [`${ENGINE_RELEASE_URL}.sig`]: new TextEncoder().encode(
-          JSON.stringify(signEngineRelease(release, keys.pem)),
-        ),
-      },
-    });
-    return {
-      n,
-      over: { configDir: signedInDir(), engineKeys: keys.trusted },
-      sha: createHash("sha256").update(engine).digest("hex"),
-    };
-  };
-  const plan = async (path: string, p: ReturnType<typeof paid>) => {
-    const s = setup(repo(), p.over, p.n);
+  const plan = async (path: string, p: ReturnType<typeof paidEngine>) => {
+    const s = setupH(repo(), p.over, p.n);
     const finding = findingsOf(await s.call("scan")).find((f) => f.path === path);
     return s.call("plan_fix", { findingId: finding?.findingId });
   };
 
-  it("signed in on a paid plan: the verified engine's exact preview, read-only, fenced as repository text", async () => {
-    const p = paid();
-    const r = await plan("src/ai.ts", p);
+  it("signed in on a paid plan: the verified engine's exact edits, fenced as repository text, nothing written", async () => {
+    const calls: string[] = [];
+    const p = paidEngine(greedyEngine(calls));
+    const s = setupH(
+      repo({
+        "src/ai.ts": `const x = 1;\nconst y = 2;\nclient.create({ model: "acme-1" }); // ${INJECTION}\n`,
+      }),
+      p.over,
+      p.n,
+    );
+    const finding = findingsOf(await s.call("scan")).find((f) => f.path === "src/ai.ts");
+    const r = await s.call("plan_fix", { findingId: finding?.findingId });
     expect(r.structured.tier).toBe("paid");
-    const engine = r.structured.engine as { sha256: string; preview: string };
-    expect(engine.sha256).toBe(p.sha);
-    expect(engine.preview).toContain("src/ai.ts:3");
+    expect(r.structured.engine).toEqual({ sha256: p.sha });
+    expect(r.structured.recipeId).toBe("test-swap");
+    expect(r.structured.edits).toEqual([
+      {
+        path: "src/ai.ts",
+        line: 3,
+        before: `client.create({ model: "acme-1" }); // ${INJECTION}`,
+        after: `client.create({ model: "acme-2" }); // ${INJECTION}`,
+      },
+    ]);
     expect(onlyFenced(r.text, INJECTION)).toBe(true);
-    expect(
-      (globalThis as { harbynTestWrites?: boolean[] }).harbynTestWrites?.every((w) => w === false),
-    ).toBe(true);
+    expect(calls).toEqual([`plan ${EVENTS.swap}`]);
     expect(JSON.stringify(r.structured)).not.toContain("person@example.com");
     expect(p.n.urls.sort()).toEqual(
       [`${CLI_API}/whoami`, CLI_ENGINE_URL, ENGINE_RELEASE_URL, `${ENGINE_RELEASE_URL}.sig`].sort(),
     );
   });
 
-  it("a reviewed migration in the engine's knowledge makes the plan a recipe", async () => {
-    const migration = {
-      package: { ecosystem: "npm", name: "acme-sdk", from: "<2.0.0", to: "2.0.0" },
-    };
-    const p = paid({
-      knowledge: {
-        schemaVersion: 1,
-        migrations: [{ eventId: EVENTS.swap, vendor: "acme", migration }],
-      },
-    });
-    const r = await plan("src/ai.ts", p);
+  it("defence in depth: an engine that plans edits in alert-only files gets them dropped by the open guard", async () => {
+    const p = paidEngine(greedyEngine());
+    const r = await setupH(repo(), p.over, p.n).call("plan_fix", { eventId: EVENTS.swap });
     expect(r.structured.tier).toBe("paid");
-    expect(r.structured.mode).toBe("recipe");
+    expect((r.structured.edits as Array<{ path: string }>).map((e) => e.path)).toEqual([
+      "src/ai.ts",
+    ]);
+  });
+
+  it("a reviewed migration in the engine's knowledge makes the plan a recipe, with no edits", async () => {
+    const engine = {
+      ...greedyEngine(),
+      plan: () => ({
+        mode: "recipe",
+        recipeId: `migration:${EVENTS.swap}`,
+        edits: [],
+        skipped: [],
+        reason: "run migrate",
+        context: null,
+      }),
+    };
+    const r = await plan("src/ai.ts", paidEngine(engine));
+    expect(r.structured).toMatchObject({
+      tier: "paid",
+      mode: "recipe",
+      recipeId: `migration:${EVENTS.swap}`,
+      edits: [],
+    });
   });
 
   it("an engine that does not verify never runs: the free plan stands", async () => {
-    const p = paid({ tamper: true });
-    const r = await plan("src/ai.ts", p);
-    expect(r.structured.tier).toBe("free");
-    expect(r.structured.engine).toBeNull();
+    const calls: string[] = [];
+    const r = await plan("src/ai.ts", paidEngine(greedyEngine(calls), { tamper: true }));
+    expect(r.structured).toMatchObject({
+      tier: "free",
+      engine: null,
+      edits: [],
+      context: null,
+      recipeId: null,
+    });
     expect(r.structured.engineNote).toMatch(/not available/);
+    expect(calls).toEqual([]);
+  });
+
+  it("an engine without the v2 members degrades to free and says to update the CLI", async () => {
+    const r = await plan("src/ai.ts", paidEngine(oldEngine()));
+    expect(r.structured).toMatchObject({ tier: "free", engine: null, edits: [] });
+    expect(r.structured.engineNote).toMatch(/update the CLI/);
   });
 
   it("a plan without fixes, or an alert-only finding, never fetches the engine", async () => {
-    const free = paid({ whoami: { email: "x@example.com", plan: "free", fixes: false } });
+    const free = paidEngine(greedyEngine(), {
+      whoami: { email: "x@example.com", plan: "free", fixes: false },
+    });
     expect((await plan("src/ai.ts", free)).structured.tier).toBe("free");
     expect(free.n.urls).toEqual([`${CLI_API}/whoami`]);
-    const alert = paid();
+    const alert = paidEngine(greedyEngine());
     const r = await plan("src/payments/charge.ts", alert);
     expect(r.structured.mode).toBe("alert-only");
     expect(r.structured.engine).toBeNull();

@@ -1,4 +1,15 @@
-import { existsSync, lstatSync, readFileSync, realpathSync, statSync } from "node:fs";
+import { createHash, randomBytes } from "node:crypto";
+import {
+  chmodSync,
+  existsSync,
+  lstatSync,
+  readFileSync,
+  realpathSync,
+  renameSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from "node:fs";
 import { homedir } from "node:os";
 import { dirname, isAbsolute, join, relative, sep } from "node:path";
 import { isSecretFile } from "../walk.ts";
@@ -82,15 +93,48 @@ export const resolveInside = (root: string, path: string): { full: string; rel: 
 
 export const readInside = (root: string, path: string): string | undefined => {
   try {
-    const { full } = resolveInside(root, path);
-    const name = full.split(sep).pop() ?? "";
-    if (isSecretFile(name)) return undefined;
-    const stat = lstatSync(full);
-    if (!stat.isFile() || stat.size > MAX_FILE_BYTES) return undefined;
-    const bytes = readFileSync(full);
-    const text = bytes.toString("utf8");
-    return Buffer.from(text, "utf8").equals(bytes) ? text : undefined;
+    return fileForWrite(root, path).text;
   } catch {
     return undefined;
   }
+};
+
+export const sha256Text = (text: string): string =>
+  createHash("sha256").update(text, "utf8").digest("hex");
+
+export const fileForWrite = (
+  root: string,
+  path: string,
+): { full: string; rel: string; text: string; sha256: string; mode: number } => {
+  const { full, rel } = resolveInside(root, path);
+  const name = full.split(sep).pop() ?? "";
+  if (isSecretFile(name)) throw new PathRefused("a secret file is never read or written");
+  const stat = lstatSync(full);
+  if (!stat.isFile()) throw new PathRefused("not a regular file");
+  if (stat.nlink > 1) throw new PathRefused("the file has another hard link");
+  if (stat.size > MAX_FILE_BYTES) throw new PathRefused("the file is over 1 MB");
+  const bytes = readFileSync(full);
+  const text = bytes.toString("utf8");
+  if (!Buffer.from(text, "utf8").equals(bytes)) throw new PathRefused("the file is not UTF-8");
+  return { full, rel, text, sha256: sha256Text(text), mode: stat.mode };
+};
+
+export const writeInside = (
+  root: string,
+  path: string,
+  expected: string,
+  text: string,
+): { sha256: string } => {
+  const current = fileForWrite(root, path);
+  if (current.sha256 !== expected) throw new PathRefused("the file changed since it was planned");
+  const temp = join(dirname(current.full), `.harbyn-${randomBytes(6).toString("hex")}.tmp`);
+  writeFileSync(temp, text, { encoding: "utf8", flag: "wx", mode: current.mode & 0o777 });
+  try {
+    if (process.platform !== "win32") chmodSync(temp, current.mode & 0o777);
+    renameSync(temp, current.full);
+  } catch (error) {
+    rmSync(temp, { force: true });
+    throw error;
+  }
+  return { sha256: sha256Text(text) };
 };

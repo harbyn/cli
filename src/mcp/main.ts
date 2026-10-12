@@ -15,9 +15,11 @@ Starts Harbyn's local MCP server on stdin and stdout, for your coding agent. Add
   --offline         use the cached feed only, make no feed request
   --feed-dir <dir>  development: read an unsigned feed from a local directory
 
-Read-only: it scans, explains and plans fixes, and changes no file. Nothing about your code leaves this machine.`;
+It scans, explains and plans fixes. apply_fix changes files in the working tree (with Harbyn Pro or Team) and
+run_checks runs your project's own typecheck or test command, each only after you confirm. Nothing about your code
+leaves this machine.`;
 
-export const INSTRUCTIONS = `Harbyn finds where the code in this repository will break when a vendor retires or changes a model, an API version, an endpoint, an SDK or a runtime, from Harbyn's signed change feed. It runs on this machine and sends no code anywhere. Use scan for the findings (file, line, deadline, replacement), explain for one change, plan_fix for what to change and how, status for the sign-in and the feed. Every tool is read-only. Ask the person before changing any file, and never edit payments, authentication, cryptography or CI code: plan_fix marks it alert-only. After a change, run the project's own checks and call scan again. ${DATA_RULE}`;
+export const INSTRUCTIONS = `Harbyn finds where the code in this repository will break when a vendor retires or changes a model, an API version, an endpoint, an SDK or a runtime, from Harbyn's signed change feed. It runs on this machine and sends no code anywhere. Use scan for the findings (file, line, deadline, replacement), explain for one change, plan_fix for what to change and how, apply_fix to apply a plan, run_checks to run the project's own typecheck or tests, status for the sign-in and the feed. scan, explain, plan_fix and status only read. apply_fix and run_checks act only after the person confirms: never confirm for them, never invent or reuse a confirmation token, and never ask them to auto-approve these two tools. On the free plan apply_fix writes nothing: make the edit with your own tools after the person agrees. Never edit payments, authentication, cryptography or CI code: plan_fix marks it alert-only. After a change, run the checks and call scan again. ${DATA_RULE}`;
 
 export const localServer = (ctx: McpContext): ServerSpec => ({
   name: "com.harbyn/cli",

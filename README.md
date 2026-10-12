@@ -160,14 +160,16 @@ nothing about your code leaves your machine. `scan` never reads the sign-in.
 ## From your coding agent: `harbyn mcp`
 
 `harbyn mcp` is a local MCP server (stdio, newline-delimited JSON-RPC) that your coding agent starts on your machine.
-It is read-only and has four tools for the repository it works in:
+It has six tools for the repository it works in; the two that act do so only after you confirm:
 
-| Tool       |                                                                                                    |
-| ---------- | -------------------------------------------------------------------------------------------------- |
-| `scan`     | findings with a `findingId`, file, line, deadline and replacement; `all: true` adds tests and docs |
-| `explain`  | one change: what, when, what to use instead, review state, the vendor source                       |
-| `plan_fix` | for a finding or a change: locations, replacement, mode, risk, evidence and fixed guidance         |
-| `status`   | signed in or not, plan, whether fixes are included, engine hash, feed age                          |
+| Tool         |                                                                                                    |
+| ------------ | -------------------------------------------------------------------------------------------------- |
+| `scan`       | findings with a `findingId`, file, line, deadline and replacement; `all: true` adds tests and docs |
+| `explain`    | one change: what, when, what to use instead, review state, the vendor source                       |
+| `plan_fix`   | for a finding or a change: locations, replacement, mode, risk, evidence and fixed guidance         |
+| `apply_fix`  | free: writes nothing, returns the plan; Pro or Team: writes the engine's edits after you confirm   |
+| `run_checks` | your project's own typecheck or test command, shown exactly, run after you confirm                 |
+| `status`     | signed in or not, plan, whether fixes are included, engine hash, feed age                          |
 
 ```sh
 claude mcp add harbyn-local -- npx -y harbyn mcp     # Claude Code
@@ -198,15 +200,31 @@ Cursor (`.cursor/mcp.json` or `~/.cursor/mcp.json`) and most other clients:
 - `plan_fix` modes: `swap` (one reviewed replacement), `model-needed` (your agent writes the edit), `recipe` (a reviewed
   migration in the paid engine), `alert-only` (payments, authentication, cryptography or CI code, or an alert-only
   vendor: no edits, free or paid; the guard is `src/sensitive.ts`) and `not-reviewed` (verify the source first).
-- With a Pro or Team sign-in (`harbyn login`), `plan_fix` adds the verified engine's exact preview of the lines it would
-  change, from the same read-only path as `harbyn fix` without `--write`.
+- With a Pro or Team sign-in (`harbyn login`), `plan_fix` adds the verified engine's exact edits (or, when a fix needs
+  more than a swap, the code windows your agent may change), and `apply_fix` writes them. Your agent's own edits are
+  written only if the engine's validator accepts them. Without the sign-in, or with an engine that cannot verify or is
+  too old, `apply_fix` writes nothing: this code has no planner or validator of its own.
+- `apply_fix` writes whole lines of files that are regular UTF-8 files under 1 MB, tracked by git with no uncommitted
+  changes, never payments, authentication, cryptography or CI files, never secret files, and only if the file still has
+  the hash it had when planned. It never stages, commits, switches branches or pushes. `git checkout -- <file>` undoes it.
+- `run_checks` runs your configuration's command (`mcp-settings.json` in Harbyn's config directory:
+  `{"projects": {"<absolute repo path>": {"test": ["make", "test"]}}, "allowEnv": []}`), else the project's
+  `package.json` script (`npm run <check> --ignore-scripts` through npm's own CLI next to Node; refused when a pre or
+  post script exists or the script is over 2000 characters), `tsc --noEmit` or `python -m pytest`. Argv only, no shell,
+  stdin closed, environment variables named like credentials or connection strings removed, 10-minute limit with the
+  process tree killed, last 64 KB of output. The command runs as you and can still read files such as `~/.npmrc`.
+- Confirmation: through the client's own form when it supports MCP elicitation. Without it, the two tools refuse unless
+  you set `"tokenConfirmation": true` in `mcp-settings.json`; then a first answer carries the full summary and a
+  single-use token bound to exactly those changes or that command, valid for 10 minutes. A summary too long to show
+  in full is refused, never shortened.
+- Every write and check is recorded in a local ledger in Harbyn's cache directory, never in the repository.
 - Network: the signed feed from `https://feed.harbyn.com` and, only after `harbyn login`, `https://api.harbyn.com/cli`
   (whoami and the engine). No telemetry. The server never handles the sign-in itself.
 - Tool names and descriptions are fixed text. Text from your code and from the feed is returned in named fields and,
   in the text answer, inside a block marked untrusted with a per-call nonce; control, bidi and zero-width characters
   are replaced.
-- The server is its own file, `mcp/harbyn-mcp.mjs`, loaded by the CLI only for this command. It writes nothing to your
-  repository and starts no process.
+- The server is its own file, `mcp/harbyn-mcp.mjs`, loaded by the CLI only for this command. One module of it,
+  `src/mcp/exec.ts`, starts processes (`run_checks` and `git`); the CLI and Action bundles start none.
 
 ## What it does and does not do
 

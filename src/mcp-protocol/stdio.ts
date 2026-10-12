@@ -28,7 +28,7 @@ type Id = string | number;
 
 export interface StdioClient {
   capabilities: Record<string, unknown>;
-  request: (method: string, params?: JsonObject) => Promise<unknown>;
+  request: (method: string, params?: JsonObject, timeoutMs?: number) => Promise<unknown>;
 }
 
 export interface StdioOptions {
@@ -70,13 +70,16 @@ export const serveStdio = async (options: StdioOptions): Promise<void> => {
   const inFlight = new Set<Promise<void>>();
   let calls = 0;
 
-  const request = (method: string, params?: JsonObject): Promise<unknown> =>
+  const request = (method: string, params?: JsonObject, timeoutMs?: number): Promise<unknown> =>
     new Promise((resolve, reject) => {
       const requestId = `harbyn-${nextId++}`;
-      const timer = setTimeout(() => {
-        pending.delete(requestId);
-        reject(new Error(`the client did not answer ${method}`));
-      }, options.clientRequestTimeoutMs ?? CLIENT_REQUEST_TIMEOUT_MS);
+      const timer = setTimeout(
+        () => {
+          pending.delete(requestId);
+          reject(new Error(`the client did not answer ${method}`));
+        },
+        timeoutMs ?? options.clientRequestTimeoutMs ?? CLIENT_REQUEST_TIMEOUT_MS,
+      );
       timer.unref?.();
       pending.set(requestId, { resolve, reject, timer });
       send({ jsonrpc: "2.0", id: requestId, method, ...(params ? { params } : {}) });
@@ -193,7 +196,14 @@ export const serveStdio = async (options: StdioOptions): Promise<void> => {
           );
         calls += 1;
         try {
-          return ok(callResult(await tool.call(p.data.arguments ?? {}, today())));
+          return ok(
+            callResult(
+              await tool.call(p.data.arguments ?? {}, today(), {
+                capabilities: clientCapabilities,
+                request,
+              }),
+            ),
+          );
         } catch (e) {
           options.onError?.(e);
           return error(requestId, ERR.internal, "Internal error");

@@ -1,5 +1,5 @@
 import { z } from "zod";
-import type { JsonObject, Tool, ToolResult } from "./protocol.ts";
+import type { JsonObject, Tool, ToolAnnotations, ToolResult, ToolSession } from "./protocol.ts";
 
 export const MAX_ITEMS = 50;
 export const MAX_TEXT_BYTES = 20 * 1024;
@@ -57,7 +57,12 @@ export const defineTool = <I extends z.ZodType, O extends z.ZodType>(def: {
   description: string;
   input: I;
   output: O;
-  run: (args: z.output<I>, today: string) => ToolAnswer<O> | Promise<ToolAnswer<O>>;
+  annotations?: ToolAnnotations;
+  run: (
+    args: z.output<I>,
+    today: string,
+    session?: ToolSession,
+  ) => ToolAnswer<O> | Promise<ToolAnswer<O>>;
 }): Tool & { output: O } => ({
   name: def.name,
   title: def.title,
@@ -65,10 +70,11 @@ export const defineTool = <I extends z.ZodType, O extends z.ZodType>(def: {
   inputSchema: jsonSchemaOf(def.input, "input"),
   outputSchema: jsonSchemaOf(def.output, "output"),
   output: def.output,
-  call: async (args, today) => {
+  ...(def.annotations ? { annotations: def.annotations } : {}),
+  call: async (args, today, session) => {
     const parsed = def.input.safeParse(args);
     if (!parsed.success) return toolError(`Invalid arguments. ${argumentProblem(parsed.error)}`);
-    const r = await def.run(parsed.data, today);
+    const r = await def.run(parsed.data, today, session);
     if ("error" in r) return toolError(r.error);
     return { structured: r.data as JsonObject, text: capText(r.text) };
   },

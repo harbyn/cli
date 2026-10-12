@@ -30,13 +30,33 @@ export interface ToolResult {
   isError?: boolean;
 }
 
+export interface ToolAnnotations {
+  readOnlyHint: boolean;
+  destructiveHint: boolean;
+  idempotentHint: boolean;
+  openWorldHint: boolean;
+}
+
+export const READ_ONLY: ToolAnnotations = {
+  readOnlyHint: true,
+  destructiveHint: false,
+  idempotentHint: true,
+  openWorldHint: false,
+};
+
+export interface ToolSession {
+  capabilities: Record<string, unknown>;
+  request: (method: string, params?: JsonObject, timeoutMs?: number) => Promise<unknown>;
+}
+
 export interface Tool {
   name: string;
   title: string;
   description: string;
   inputSchema: JsonObject;
   outputSchema: JsonObject;
-  call: (args: unknown, today: string) => ToolResult | Promise<ToolResult>;
+  annotations?: ToolAnnotations;
+  call: (args: unknown, today: string, session?: ToolSession) => ToolResult | Promise<ToolResult>;
 }
 
 export interface ServerSpec {
@@ -142,13 +162,7 @@ export const toolList = (spec: ServerSpec): Json[] =>
     description: t.description,
     inputSchema: t.inputSchema,
     outputSchema: t.outputSchema,
-    annotations: {
-      title: t.title,
-      readOnlyHint: true,
-      destructiveHint: false,
-      idempotentHint: true,
-      openWorldHint: false,
-    },
+    annotations: { title: t.title, ...(t.annotations ?? READ_ONLY) },
   }));
 
 export const callResult = (r: ToolResult): JsonObject => ({
