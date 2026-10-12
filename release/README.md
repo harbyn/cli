@@ -42,6 +42,41 @@ npx harbyn scan --ci       # exit code 1 when code is affected, for CI
 
 Exit codes: `0` done, `1` findings with `--ci`, `2` the feed could not be verified (nothing is reported), usage errors.
 
+## From your coding agent: `harbyn mcp`
+
+`harbyn mcp` is a local MCP server: your coding agent starts it on your machine and talks to it over stdio. It gives
+the agent four read-only tools for the repository it works in: `scan` (findings with file, line, deadline and
+replacement), `explain` (one change and its source), `plan_fix` (what to change, where, the risk and the evidence) and
+`status` (sign-in, plan and feed age). It changes no file; your agent makes the edit, after you agree.
+
+```sh
+claude mcp add harbyn-local -- npx -y harbyn mcp     # Claude Code
+codex mcp add harbyn-local -- npx -y harbyn mcp      # Codex
+```
+
+VS Code (`.vscode/mcp.json`):
+
+```json
+{
+  "servers": {
+    "harbyn-local": { "type": "stdio", "command": "npx", "args": ["-y", "harbyn", "mcp"] }
+  }
+}
+```
+
+Cursor (`.cursor/mcp.json` or `~/.cursor/mcp.json`) and most other clients:
+
+```json
+{ "mcpServers": { "harbyn-local": { "command": "npx", "args": ["-y", "harbyn", "mcp"] } } }
+```
+
+`-y` stops npx waiting on an install question the client cannot answer; write `harbyn@<version>` to pin a release.
+The server works in the repository your client opens, or the one given with `--root <dir>`, and refuses a folder that
+is not a git repository, your home folder or a disk root. Payments, authentication, cryptography and CI files are
+marked alert-only and never planned for editing. Text from your code and from the feed is returned as untrusted data.
+Its only network requests are the signed feed and, after `harbyn login`, Harbyn's API (your plan, and the paid
+engine's exact preview of a fix). The four tools only read, so they are safe to approve automatically.
+
 ## What it does and does not do
 
 - **Read-only.** It never writes to your project. The only file it writes is its feed cache (`%LOCALAPPDATA%\harbyn`,
@@ -54,8 +89,9 @@ Exit codes: `0` done, `1` findings with `--ci`, `2` the feed could not be verifi
   this file. It carries an expiry date, and a feed older than one already accepted on this machine is rejected. If
   anything fails, the scan reports nothing and exits 2, because a report built on data we cannot trust is worse than
   no report.
-- **One file, no dependencies, no install scripts.** Everything is bundled into `harbyn.mjs` and left unminified so
-  you can read it. The bundled open-source packages are listed in `THIRD_PARTY_NOTICES.md`.
+- **No dependencies, no install scripts.** Everything is bundled into `harbyn.mjs` (and, for `harbyn mcp`,
+  `mcp/harbyn-mcp.mjs`) and left unminified so you can read it. The bundled open-source packages are listed in
+  `THIRD_PARTY_NOTICES.md`.
 
 ## License
 

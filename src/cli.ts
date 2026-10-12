@@ -9,7 +9,7 @@ import { actionable, scan, toDependencyText, toJson, toText } from "./index.ts";
 import { configDir, deviceLogin, logout, readToken, saveToken, whoami } from "./login.ts";
 import { PAID_FIX_MESSAGE } from "./product.ts";
 import { defaultCacheDir } from "./remote-feed.ts";
-import { CLI_NAME, CLI_VERSION } from "./product.ts";
+import { CLI_NAME, CLI_VERSION, IS_BUNDLE } from "./product.ts";
 import { CONNECTION_ID, requestOidcToken } from "./upload.ts";
 
 config({ jitless: true });
@@ -20,6 +20,7 @@ const USAGE = `usage: ${CLI_NAME} scan [dir] [options]
   logout              sign it out, and revoke the sign-in
   fix [dir] [--write] show the fixes the paid engine makes; --write applies them to the files
   migrate             SDK migrations (prepare | apply); see https://harbyn.com/docs
+  mcp [--root <dir>]  local MCP server for your coding agent (read-only): scan, explain, plan_fix, status
                       Fixes and migrations are part of Harbyn Pro and Team: https://harbyn.com/pricing
 
   --json              machine-readable output
@@ -60,6 +61,15 @@ if (flag("--version")) {
   process.exit(0);
 }
 const command = positional[0] ?? "scan";
+if (command === "mcp") {
+  const entry = new URL(IS_BUNDLE ? "./mcp/harbyn-mcp.mjs" : "./mcp/main.ts", import.meta.url);
+  const server = (await import(entry.href)) as {
+    runMcp: (argv: readonly string[]) => Promise<number>;
+  };
+  const code = await server.runMcp(args.slice(args.indexOf("mcp") + 1));
+  await new Promise<void>((done) => process.stdout.write("", () => done()));
+  process.exit(code);
+}
 if (command === "login") {
   try {
     const { token, expiresAt } = await deviceLogin({ fetch, print: (line) => console.log(line) });

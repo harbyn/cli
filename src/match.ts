@@ -104,6 +104,7 @@ interface EndpointNeedle {
   vendor: Vendor;
   prefix: string;
   path: string;
+  migrated: string[];
 }
 
 export const liveEvents = (feed: FeedIndex): ChangeEvent[] => {
@@ -158,7 +159,12 @@ export class Matcher {
             this.packages.push({ event, ecosystem: target.ecosystem, name: target.name, range });
         } else if (target.type === "endpoint") {
           const prefix = target.path.split("{")[0] as string;
-          if (prefix.length >= 8) this.endpoints.push({ event, vendor, prefix, path: target.path });
+          if (prefix.length >= 8) {
+            const migrated = (event.replacement?.targets ?? [])
+              .flatMap((t) => (t.type === "endpoint" ? [t.path.split("{")[0] as string] : []))
+              .filter((p) => p.length > prefix.length && p.startsWith(prefix));
+            this.endpoints.push({ event, vendor, prefix, path: target.path, migrated });
+          }
         }
       }
     }
@@ -295,18 +301,24 @@ export class Matcher {
       if (!vendorsInFile.has(needle.vendor.id) || !file.text.includes(needle.prefix)) continue;
       lines.forEach((line, index) => {
         if (line.length > 4000) return;
-        const at = line.indexOf(needle.prefix);
-        if (at === -1) return;
         const exact = !needle.path.includes("{");
-        if (exact && isIdChar(line[at + needle.prefix.length])) return;
-        out.push({
-          event: needle.event,
-          via: "endpoint",
-          token: needle.path,
-          path: file.path,
-          line: index + 1,
-          context,
-        });
+        for (
+          let at = line.indexOf(needle.prefix);
+          at !== -1;
+          at = line.indexOf(needle.prefix, at + 1)
+        ) {
+          if (exact && isIdChar(line[at + needle.prefix.length])) continue;
+          if (needle.migrated.some((p) => line.startsWith(p, at))) continue;
+          out.push({
+            event: needle.event,
+            via: "endpoint",
+            token: needle.path,
+            path: file.path,
+            line: index + 1,
+            context,
+          });
+          return;
+        }
       });
     }
   }

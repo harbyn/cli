@@ -12,6 +12,7 @@ export * from "./match.ts";
 export * from "./remote-feed.ts";
 export * from "./report.ts";
 export * from "./runtimes.ts";
+export * from "./sensitive.ts";
 export * from "./walk.ts";
 export { mdText } from "./github.ts";
 export { CLI_NAME, CLI_VERSION } from "./product.ts";

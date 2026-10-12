@@ -36,6 +36,8 @@ const LOCKFILES = new Set([
 const SECRET_FILE =
   /^(?:\.env(?!\.example$|\.sample$|\.template$).*|.*\.(?:pem|key|p12|pfx|keystore)|id_(?:rsa|ed25519|ecdsa).*|\.npmrc|\.netrc|credentials(?:\.json)?)$/i;
 
+export const isSecretFile = (name: string): boolean => SECRET_FILE.test(name);
+
 export const IGNORE_FILE = ".harbynignore";
 
 const MAX_FILE_BYTES = 1024 * 1024;

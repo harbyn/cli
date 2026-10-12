@@ -157,6 +157,57 @@ line in the dashboard lists every sign-in with its last use and signs any of the
 the engine from `https://api.harbyn.com/cli/engine` with that sign-in, verify it exactly as above, and run it here:
 nothing about your code leaves your machine. `scan` never reads the sign-in.
 
+## From your coding agent: `harbyn mcp`
+
+`harbyn mcp` is a local MCP server (stdio, newline-delimited JSON-RPC) that your coding agent starts on your machine.
+It is read-only and has four tools for the repository it works in:
+
+| Tool       |                                                                                                    |
+| ---------- | -------------------------------------------------------------------------------------------------- |
+| `scan`     | findings with a `findingId`, file, line, deadline and replacement; `all: true` adds tests and docs |
+| `explain`  | one change: what, when, what to use instead, review state, the vendor source                       |
+| `plan_fix` | for a finding or a change: locations, replacement, mode, risk, evidence and fixed guidance         |
+| `status`   | signed in or not, plan, whether fixes are included, engine hash, feed age                          |
+
+```sh
+claude mcp add harbyn-local -- npx -y harbyn mcp     # Claude Code
+codex mcp add harbyn-local -- npx -y harbyn mcp      # Codex
+```
+
+VS Code (`.vscode/mcp.json`):
+
+```json
+{
+  "servers": {
+    "harbyn-local": { "type": "stdio", "command": "npx", "args": ["-y", "harbyn", "mcp"] }
+  }
+}
+```
+
+Cursor (`.cursor/mcp.json` or `~/.cursor/mcp.json`) and most other clients:
+
+```json
+{ "mcpServers": { "harbyn-local": { "command": "npx", "args": ["-y", "harbyn", "mcp"] } } }
+```
+
+`-y` stops npx waiting on an install question the client cannot answer; write `harbyn@<version>` to pin a release.
+
+- The root is `--root <dir>`, else the client's single `file://` root, else the working directory. It must be inside a
+  git work tree, and never your home directory or a filesystem root. A path a tool receives must be relative, without
+  `..`, with no symbolic link in any component, outside `.git` and `node_modules`; secret files are never read.
+- `plan_fix` modes: `swap` (one reviewed replacement), `model-needed` (your agent writes the edit), `recipe` (a reviewed
+  migration in the paid engine), `alert-only` (payments, authentication, cryptography or CI code, or an alert-only
+  vendor: no edits, free or paid; the guard is `src/sensitive.ts`) and `not-reviewed` (verify the source first).
+- With a Pro or Team sign-in (`harbyn login`), `plan_fix` adds the verified engine's exact preview of the lines it would
+  change, from the same read-only path as `harbyn fix` without `--write`.
+- Network: the signed feed from `https://feed.harbyn.com` and, only after `harbyn login`, `https://api.harbyn.com/cli`
+  (whoami and the engine). No telemetry. The server never handles the sign-in itself.
+- Tool names and descriptions are fixed text. Text from your code and from the feed is returned in named fields and,
+  in the text answer, inside a block marked untrusted with a per-call nonce; control, bidi and zero-width characters
+  are replaced.
+- The server is its own file, `mcp/harbyn-mcp.mjs`, loaded by the CLI only for this command. It writes nothing to your
+  repository and starts no process.
+
 ## What it does and does not do
 
 - `scan` never writes to your project. The only file it writes is its feed cache (`%LOCALAPPDATA%\harbyn`,
@@ -169,8 +220,9 @@ nothing about your code leaves your machine. `scan` never reads the sign-in.
 - The feed is signed, and the signature is checked against keys pinned in the code. It carries an expiry date, and a
   feed older than one already accepted on this machine is rejected. If anything fails, nothing is reported and the
   exit code is 2.
-- One file, no dependencies, no install scripts. Everything is bundled into `harbyn.mjs` and left unminified so you
-  can read it. Bundled packages and their licenses are listed in `THIRD_PARTY_NOTICES.md`.
+- No dependencies, no install scripts. Everything is bundled into `harbyn.mjs` (and, for `harbyn mcp`,
+  `mcp/harbyn-mcp.mjs`) and left unminified so you can read it. Bundled packages and their licenses are listed in
+  `THIRD_PARTY_NOTICES.md`.
 
 ## Verifying a release
 

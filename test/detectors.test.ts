@@ -249,4 +249,30 @@ describe("detectors", () => {
     });
     expect(ids(root)).toEqual(["src/api.ts:2:endpoint:/v1/assistants/{id}:code"]);
   });
+
+  it("does not flag code already on a replacement endpoint that extends the old path", () => {
+    const moved = feedIndex.parse({
+      ...feed,
+      events: [
+        {
+          ...base,
+          id: "acme/2026-01-01-batches",
+          affects: [{ type: "endpoint", method: "POST", path: "/v1/messages" }],
+          replacement: {
+            targets: [{ type: "endpoint", method: "POST", path: "/v1/messages/batches" }],
+          },
+        },
+      ],
+    });
+    const root = repo({
+      "src/api.ts": [
+        'const base = "https://api.acme.example";',
+        "await post(`${base}/v1/messages/batches`);",
+        "await post(`${base}/v1/messages`);",
+        "await post(`${base}/v1/messages/batches`, `${base}/v1/messages`);",
+      ].join("\n"),
+    });
+    const found = scan(root, moved).findings.map((f) => `${f.path}:${f.line}:${f.token}`);
+    expect(found).toEqual(["src/api.ts:3:/v1/messages", "src/api.ts:4:/v1/messages"]);
+  });
 });

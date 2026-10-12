@@ -6,3 +6,4 @@ export * from "./feed-index.ts";
 export * from "./semver.ts";
 export * from "./repo-manifest.ts";
 export * from "./dismissal.ts";
+export * from "./agent-prompts.ts";

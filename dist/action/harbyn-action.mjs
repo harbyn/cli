@@ -12696,6 +12696,10 @@ var repoManifest = external_exports.strictObject({
   }).optional()
 });
 
+// src/schema/agent-prompts.ts
+var LOCAL_MCP_ARGS = ["-y", "harbyn", "mcp"];
+var LOCAL_MCP_COMMAND = `npx ${LOCAL_MCP_ARGS.join(" ")}`;
+
 // src/feed/load.ts
 var MAX_FILE_BYTES = 64 * 1024;
 var listJson = (root, dir, problems) => {
@@ -12871,7 +12875,7 @@ import { join as join2 } from "node:path";
 
 // src/product.ts
 var CLI_NAME = "harbyn";
-var CLI_VERSION = true ? "0.9.0" : "0.0.0-dev";
+var CLI_VERSION = true ? "0.10.0" : "0.0.0-dev";
 var PAID_FIX_MESSAGE = `Automatic fixes and SDK migrations are part of Harbyn Pro and Team.
 Switch them on for a repository from the dashboard, no terminal needed: https://harbyn.com/pricing
 This open-source CLI finds what will break and where: run \`${CLI_NAME} scan\`.`;
@@ -13385,7 +13389,10 @@ var Matcher = class {
             this.packages.push({ event, ecosystem: target3.ecosystem, name: target3.name, range });
         } else if (target3.type === "endpoint") {
           const prefix = target3.path.split("{")[0];
-          if (prefix.length >= 8) this.endpoints.push({ event, vendor: vendor2, prefix, path: target3.path });
+          if (prefix.length >= 8) {
+            const migrated = (event.replacement?.targets ?? []).flatMap((t) => t.type === "endpoint" ? [t.path.split("{")[0]] : []).filter((p) => p.length > prefix.length && p.startsWith(prefix));
+            this.endpoints.push({ event, vendor: vendor2, prefix, path: target3.path, migrated });
+          }
         }
       }
     }
@@ -13489,18 +13496,20 @@ var Matcher = class {
       if (!vendorsInFile.has(needle.vendor.id) || !file2.text.includes(needle.prefix)) continue;
       lines2.forEach((line, index) => {
         if (line.length > 4e3) return;
-        const at = line.indexOf(needle.prefix);
-        if (at === -1) return;
         const exact = !needle.path.includes("{");
-        if (exact && isIdChar(line[at + needle.prefix.length])) return;
-        out.push({
-          event: needle.event,
-          via: "endpoint",
-          token: needle.path,
-          path: file2.path,
-          line: index + 1,
-          context
-        });
+        for (let at = line.indexOf(needle.prefix); at !== -1; at = line.indexOf(needle.prefix, at + 1)) {
+          if (exact && isIdChar(line[at + needle.prefix.length])) continue;
+          if (needle.migrated.some((p) => line.startsWith(p, at))) continue;
+          out.push({
+            event: needle.event,
+            via: "endpoint",
+            token: needle.path,
+            path: file2.path,
+            line: index + 1,
+            context
+          });
+          return;
+        }
       });
     }
   }
@@ -14369,6 +14378,53 @@ function* walk(root, stats, options = {}) {
     }
   }
 }
+
+// src/sensitive.ts
+var SENSITIVE_CONTENT = new RegExp(
+  [
+    "bcrypt",
+    "argon2",
+    "scrypt",
+    "pbkdf2",
+    "jsonwebtoken",
+    "jose",
+    "passport",
+    "next-auth",
+    "@auth/",
+    "auth0",
+    "@clerk/",
+    "firebase/auth",
+    "supabase\\.auth",
+    "crypto\\.subtle",
+    "createCipheriv",
+    "createDecipheriv",
+    "createSign",
+    "createHmac",
+    "createHash",
+    "randomBytes",
+    "webcrypto",
+    "node:crypto",
+    "require\\(.crypto.\\)",
+    "cryptography\\.hazmat",
+    "hashlib",
+    "hmac\\.new",
+    "jwt\\.encode",
+    "javax\\.crypto",
+    "MessageDigest",
+    '"crypto/',
+    "golang\\.org/x/crypto",
+    "stripe",
+    "braintree",
+    "adyen",
+    "paypal",
+    "mercadopago",
+    "pagarme",
+    "pagseguro",
+    "paymentIntents",
+    "checkout\\.sessions"
+  ].join("|"),
+  "i"
+);
 
 // src/index.ts
 var scan = (root, feed2, options = {}) => {

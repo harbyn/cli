@@ -34,6 +34,13 @@ const targets: Target[] = [
     ],
   },
   {
+    entry: "src/mcp/main.ts",
+    outDir: "dist/package/mcp",
+    file: "harbyn-mcp.mjs",
+    shebang: false,
+    copy: [],
+  },
+  {
     entry: "src/action.ts",
     outDir: "dist/action",
     file: "harbyn-action.mjs",
