@@ -21,6 +21,7 @@ const release = JSON.parse(readFileSync(join(root, "release", "package.json"), "
   version: string;
 };
 const MAX_BUNDLE_BYTES = 600_000;
+const MAX_MCP_BUNDLE_BYTES = 720_000;
 
 const viaShell = (command: string): boolean => process.platform === "win32" && command === "npm";
 const path = (p: string): string => (process.platform === "win32" ? `"${p}"` : p);
@@ -322,7 +323,9 @@ describe.each(["CLI", "action", "mcp"])("%s bundle contents", (which) => {
   const code = (): string => bundles().find(([name]) => name === which)?.[1] ?? "";
 
   it("stays small enough to read", () => {
-    expect(Buffer.byteLength(code())).toBeLessThan(MAX_BUNDLE_BYTES);
+    expect(Buffer.byteLength(code())).toBeLessThan(
+      which === "mcp" ? MAX_MCP_BUNDLE_BYTES : MAX_BUNDLE_BYTES,
+    );
   });
 
   it("evaluates no code; only the MCP server starts processes, from one import, without a shell", () => {
@@ -361,6 +364,7 @@ describe.each(["CLI", "action", "mcp"])("%s bundle contents", (which) => {
       "https://harbyn.com/docs#local-mcp",
       "https://harbyn.com/pricing",
       "https://api.harbyn.com/cli",
+      "https://registry.npmjs.org/",
       ...engine.filter((u) => u !== "https://api.harbyn.com"),
     ];
     const expected =
@@ -627,7 +631,7 @@ describe("harbyn mcp from the installed package", () => {
     return { status: result.status, stderr: result.stderr, answers, hosts };
   };
 
-  it("serves the six tools over stdio from the installed package", () => {
+  it("serves the seven tools over stdio from the installed package", () => {
     const repo = gitRepo({ "src/ai.ts": 'const x = 1;\nclient.create({ model: "acme-1" });\n' });
     const r = run(["--feed-dir", feedDir()], repo);
     expect(r.status, r.stderr).toBe(0);
@@ -637,6 +641,7 @@ describe("harbyn mcp from the installed package", () => {
       "plan_fix",
       "apply_fix",
       "run_checks",
+      "open_pr",
       "status",
     ]);
     expect(r.answers.get(2)?.result?.structuredContent?.findings).toEqual([

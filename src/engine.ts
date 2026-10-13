@@ -110,6 +110,40 @@ export interface EngineApplyResult {
   conflicts: Array<{ path: string; reason: string }>;
 }
 
+export interface EngineUpgrade {
+  package: string;
+  installed: string;
+  to: string;
+  eventId: string;
+}
+
+export interface EngineMigrationPrepareInput {
+  oldDir: string;
+  newDir: string;
+  knowledge: EngineKnowledge;
+  eventId: string;
+}
+
+export type EngineMigrationPrepared =
+  { ok: true; upgrades: EngineUpgrade[] } | { ok: false; reason: string };
+
+export interface EngineMigrationComputeInput {
+  oldDir: string;
+  newDir: string;
+}
+
+export type EngineMigrationComputed =
+  | {
+      ok: true;
+      upgrades: EngineUpgrade[];
+      files: Array<{ path: string; text: string }>;
+      manifest: string;
+      lockfile: string;
+      edits: number;
+      left: Array<{ path: string; line: number; message: string; alertOnly: boolean }>;
+    }
+  | { ok: false; reason: string };
+
 export interface EngineModule {
   ENGINE_ABI: number;
   runAction(input: EngineActionInput): Promise<FixReport | void>;
@@ -122,6 +156,8 @@ export interface EngineModule {
   plan?(input: EnginePlanInput): EnginePlan;
   validateEdits?(input: EngineValidateInput): EngineValidation;
   apply?(input: EngineApplyInput): EngineApplyResult;
+  prepareMigration?(input: EngineMigrationPrepareInput): EngineMigrationPrepared;
+  computeMigration?(input: EngineMigrationComputeInput): EngineMigrationComputed;
 }
 
 export type EngineLoad =

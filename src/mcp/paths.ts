@@ -15,6 +15,8 @@ import { dirname, isAbsolute, join, relative, sep } from "node:path";
 import { isSecretFile } from "../walk.ts";
 
 export const MAX_FILE_BYTES = 1024 * 1024;
+export const MAX_LOCKFILE_BYTES = 20_000_000;
+export const LOCKFILE = "package-lock.json";
 const MAX_PATH_CHARS = 1024;
 const NEVER = new Set([".git", "node_modules"]);
 
@@ -91,9 +93,9 @@ export const resolveInside = (root: string, path: string): { full: string; rel: 
   return { full, rel: rel.split(sep).join("/") };
 };
 
-export const readInside = (root: string, path: string): string | undefined => {
+export const readInside = (root: string, path: string, maxBytes?: number): string | undefined => {
   try {
-    return fileForWrite(root, path).text;
+    return fileForWrite(root, path, maxBytes).text;
   } catch {
     return undefined;
   }
@@ -105,6 +107,7 @@ export const sha256Text = (text: string): string =>
 export const fileForWrite = (
   root: string,
   path: string,
+  maxBytes: number = MAX_FILE_BYTES,
 ): { full: string; rel: string; text: string; sha256: string; mode: number } => {
   const { full, rel } = resolveInside(root, path);
   const name = full.split(sep).pop() ?? "";
@@ -112,7 +115,10 @@ export const fileForWrite = (
   const stat = lstatSync(full);
   if (!stat.isFile()) throw new PathRefused("not a regular file");
   if (stat.nlink > 1) throw new PathRefused("the file has another hard link");
-  if (stat.size > MAX_FILE_BYTES) throw new PathRefused("the file is over 1 MB");
+  if (stat.size > maxBytes)
+    throw new PathRefused(
+      `the file is over ${maxBytes === MAX_FILE_BYTES ? "1 MB" : `${Math.round(maxBytes / 1e6)} MB`}`,
+    );
   const bytes = readFileSync(full);
   const text = bytes.toString("utf8");
   if (!Buffer.from(text, "utf8").equals(bytes)) throw new PathRefused("the file is not UTF-8");
@@ -124,8 +130,9 @@ export const writeInside = (
   path: string,
   expected: string,
   text: string,
+  maxBytes: number = MAX_FILE_BYTES,
 ): { sha256: string } => {
-  const current = fileForWrite(root, path);
+  const current = fileForWrite(root, path, maxBytes);
   if (current.sha256 !== expected) throw new PathRefused("the file changed since it was planned");
   const temp = join(dirname(current.full), `.harbyn-${randomBytes(6).toString("hex")}.tmp`);
   writeFileSync(temp, text, { encoding: "utf8", flag: "wx", mode: current.mode & 0o777 });

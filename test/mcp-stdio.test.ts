@@ -130,10 +130,11 @@ describe("harbyn mcp over stdio", () => {
       "plan_fix",
       "apply_fix",
       "run_checks",
+      "open_pr",
       "status",
     ]);
     for (const t of tools) {
-      const acts = t.name === "apply_fix" || t.name === "run_checks";
+      const acts = t.name === "apply_fix" || t.name === "run_checks" || t.name === "open_pr";
       expect(t.annotations, t.name).toMatchObject({ readOnlyHint: !acts, destructiveHint: acts });
     }
     const scan = await c.request(2, "tools/call", { name: "scan", arguments: {} });
@@ -267,9 +268,12 @@ describe("harbyn mcp over stdio", () => {
     await big;
     await c.initialize();
     expect((await c.request(2, "resources/list")).error?.code).toBe(-32601);
-    expect((await c.request(3, "tools/call", { name: "open_pr", arguments: {} })).error?.code).toBe(
-      -32602,
-    );
+    expect(
+      (await c.request(3, "tools/call", { name: "merge_pr", arguments: {} })).error?.code,
+    ).toBe(-32602);
+    expect(
+      (await c.request(6, "tools/call", { name: "open_pr", arguments: {} })).result?.isError,
+    ).toBe(true);
     expect(
       (await c.request(4, "tools/call", { name: "scan", arguments: { path: "../../.." } })).result
         ?.isError,

@@ -2,7 +2,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { TrustedKeys } from "../feed/index.ts";
 import type { EngineKnowledge, FeedIndex } from "../schema/index.ts";
-import { type EngineEdit, type EngineModule, loadEngine } from "../engine.ts";
+import { type EngineEdit, type EngineModule, type EngineUpgrade, loadEngine } from "../engine.ts";
+import type { Scheme } from "./git.ts";
 import { CLI_NAME } from "../product.ts";
 import { Confirmations } from "./confirm.ts";
 import { getFeed } from "../feed-source.ts";
@@ -38,6 +39,56 @@ export interface McpOptions {
   platform?: NodeJS.Platform;
   execPath?: string;
   checksTimeoutMs?: number;
+  pushSchemes?: readonly Scheme[];
+}
+
+export interface AppliedRecord {
+  at: string;
+  eventId: string;
+  planId: string;
+  mode: StoredPlan["mode"];
+  recipeId: string | null;
+  engineSha256: string;
+  evidence: StoredPlan["evidence"];
+  risk: "low" | "medium" | "high";
+  files: Array<{
+    path: string;
+    sha256Before: string;
+    sha256After: string;
+    before: string;
+    after: string;
+    lines: number[];
+    machine: boolean;
+  }>;
+  leftAlone: Array<{ path: string; line: number; reason: string }>;
+  upgrades: EngineUpgrade[];
+}
+
+export interface CheckRecord {
+  at: string;
+  check: string;
+  command: string;
+  origin: string;
+  exitCode: number | null;
+  timedOut: boolean;
+  files: Array<{ path: string; sha256: string }>;
+}
+
+export interface PendingMigration {
+  planId: string;
+  binding: string;
+  summary: string;
+  at: number;
+  writes: Array<{
+    path: string;
+    sha256Before: string;
+    before: string;
+    after: string;
+    machine: boolean;
+  }>;
+  upgrades: EngineUpgrade[];
+  edits: number;
+  left: Array<{ path: string; line: number; message: string; alertOnly: boolean }>;
 }
 
 export interface StoredPlan {
@@ -53,10 +104,12 @@ export interface StoredPlan {
       token: string;
       editable: boolean;
       alertOnly: boolean;
+      context: string;
     }>;
     replacement: string[];
     guidance: string;
   };
+  risk: "low" | "medium" | "high";
   edits: EngineEdit[];
   files: Record<string, string>;
   recipeId: string | null;
@@ -100,6 +153,13 @@ export class McpContext {
   private readonly plans = new Map<string, StoredPlan>();
   readonly confirmations: Confirmations;
   readonly written = new Map<string, string>();
+  readonly applied: AppliedRecord[] = [];
+  readonly checks: CheckRecord[] = [];
+  readonly pullRequests = new Map<
+    string,
+    { branch: string; url: string | null; commit: string | null }
+  >();
+  readonly migrations = new Map<string, PendingMigration>();
 
   constructor(options: McpOptions) {
     this.options = options;

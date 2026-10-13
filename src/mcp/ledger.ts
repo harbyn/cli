@@ -6,7 +6,7 @@ const MAX_LEDGER_BYTES = 5 * 1024 * 1024;
 
 export interface LedgerEntry {
   at: string;
-  tool: "apply_fix" | "run_checks";
+  tool: "apply_fix" | "run_checks" | "open_pr";
   [field: string]: unknown;
 }
 

@@ -48,8 +48,10 @@ Exit codes: `0` done, `1` findings with `--ci`, `2` the feed could not be verifi
 for the repository it works in: `scan` (findings with file, line, deadline and replacement), `explain` (one change and
 its source), `plan_fix` (what to change, where, the risk and the evidence), `apply_fix` (writes a planned fix to the
 working tree; with Harbyn Pro or Team, after you confirm; on the free plan it writes nothing and your agent makes the
-edit), `run_checks` (your project's own typecheck or test command, after you confirm) and `status` (sign-in, plan and
-feed age). Never auto-approve `apply_fix` or `run_checks` in your client.
+edit), `run_checks` (your project's own typecheck or test command, after you confirm), `open_pr` (commits what
+`apply_fix` wrote to a new branch without touching your checkout, pushes only that branch and opens a draft pull
+request with your own gh, after you confirm; without gh, the patch and the commands) and `status` (sign-in, plan and
+feed age). Never auto-approve `apply_fix`, `run_checks` or `open_pr` in your client.
 
 ```sh
 claude mcp add harbyn-local -- npx -y harbyn mcp     # Claude Code
@@ -77,14 +79,17 @@ The server works in the repository your client opens, or the one given with `--r
 is not a git repository, your home folder or a disk root. Payments, authentication, cryptography and CI files are
 marked alert-only and never edited. Text from your code and from the feed is returned as untrusted data. Its only
 network requests are the signed feed and, after `harbyn login`, Harbyn's API (your plan, and the paid engine).
-`apply_fix` writes only whole lines of committed, unchanged files in the working tree, and `run_checks` runs only your
-project's own command without a shell; each asks you first. `scan`, `explain`, `plan_fix` and `status` only read.
+`apply_fix` writes only whole lines of committed, unchanged files in the working tree (an SDK upgrade is prepared
+outside the repository with `npm ci` and `npm install`, both `--ignore-scripts`, and written after a second yes),
+`run_checks` runs only your project's own command without a shell, and `open_pr` never uses the default branch, never
+forces, never merges and runs none of the repository's git hooks or filters; each asks you first. `scan`, `explain`,
+`plan_fix` and `status` only read.
 
 ## What it does and does not do
 
 - **Read-only scan.** `harbyn scan` never writes to your project. The only file it writes is its feed cache
   (`%LOCALAPPDATA%\harbyn`, `$XDG_CACHE_HOME/harbyn` or `~/.cache/harbyn`). Only `harbyn fix --write` and the MCP
-  server's `apply_fix`, after you confirm, change files.
+  server's `apply_fix`, after you confirm, change files; only its `open_pr`, after you confirm, creates a branch.
 - **Nothing about your code leaves your machine.** The one network request is the download of the change feed from
   `https://feed.harbyn.com/v1/feed.json` and its signature. There is no telemetry.
 - **Secrets are never opened.** `.env` files (except `.env.example` and similar), private keys, `.npmrc`, `.netrc` and

@@ -497,7 +497,7 @@ describe("apply_fix (paid): every safety rule at write time", () => {
     expect(snapshot(root)).toBe(before);
   };
 
-  it("alert-only plans, unreviewed changes and recipes are refused on the paid plan too", async () => {
+  it("alert-only plans and unreviewed changes are refused on the paid plan too; a recipe needs an engine with the v3 members", async () => {
     const { root, s } = paidSession();
     for (const [path, reason] of [
       ["src/payments/charge.ts", /alert-only/],
@@ -520,7 +520,7 @@ describe("apply_fix (paid): every safety rule at write time", () => {
       }),
     });
     const plan = await planOf(recipe.s, "src/ai.ts");
-    await refused(recipe.s, recipe.root, { planIds: [plan.planId] }, /migrate command/);
+    await refused(recipe.s, recipe.root, { planIds: [plan.planId] }, /update the CLI/);
   });
 
   it("alert-only again at write time: a file that became payments code after planning is refused", async () => {

@@ -160,16 +160,17 @@ nothing about your code leaves your machine. `scan` never reads the sign-in.
 ## From your coding agent: `harbyn mcp`
 
 `harbyn mcp` is a local MCP server (stdio, newline-delimited JSON-RPC) that your coding agent starts on your machine.
-It has six tools for the repository it works in; the two that act do so only after you confirm:
+It has seven tools for the repository it works in; the three that act do so only after you confirm:
 
-| Tool         |                                                                                                    |
-| ------------ | -------------------------------------------------------------------------------------------------- |
-| `scan`       | findings with a `findingId`, file, line, deadline and replacement; `all: true` adds tests and docs |
-| `explain`    | one change: what, when, what to use instead, review state, the vendor source                       |
-| `plan_fix`   | for a finding or a change: locations, replacement, mode, risk, evidence and fixed guidance         |
-| `apply_fix`  | free: writes nothing, returns the plan; Pro or Team: writes the engine's edits after you confirm   |
-| `run_checks` | your project's own typecheck or test command, shown exactly, run after you confirm                 |
-| `status`     | signed in or not, plan, whether fixes are included, engine hash, feed age                          |
+| Tool         |                                                                                                       |
+| ------------ | ----------------------------------------------------------------------------------------------------- |
+| `scan`       | findings with a `findingId`, file, line, deadline and replacement; `all: true` adds tests and docs    |
+| `explain`    | one change: what, when, what to use instead, review state, the vendor source                          |
+| `plan_fix`   | for a finding or a change: locations, replacement, mode, risk, evidence and fixed guidance            |
+| `apply_fix`  | free: writes nothing, returns the plan; Pro or Team: writes the engine's edits after you confirm      |
+| `run_checks` | your project's own typecheck or test command, shown exactly, run after you confirm                    |
+| `open_pr`    | commits what `apply_fix` wrote to a new branch, pushes it and opens a draft pull request with your gh |
+| `status`     | signed in or not, plan, whether fixes are included, engine hash, feed age                             |
 
 ```sh
 claude mcp add harbyn-local -- npx -y harbyn mcp     # Claude Code
@@ -207,24 +208,51 @@ Cursor (`.cursor/mcp.json` or `~/.cursor/mcp.json`) and most other clients:
 - `apply_fix` writes whole lines of files that are regular UTF-8 files under 1 MB, tracked by git with no uncommitted
   changes, never payments, authentication, cryptography or CI files, never secret files, and only if the file still has
   the hash it had when planned. It never stages, commits, switches branches or pushes. `git checkout -- <file>` undoes it.
+- SDK upgrades (`recipe` plans, Pro or Team): `apply_fix` asks first to prepare the migration in Harbyn's cache
+  directory, outside the repository: a copy of the tracked files, `npm ci --ignore-scripts`, the engine's upgraded copy,
+  `npm install --ignore-scripts` there, the engine's edits. Nothing in the repository changes. It then shows every
+  changed line, the new versions and the lockfile summary, and asks again. It writes only if `package.json` changes
+  nothing but the upgraded dependencies and the new `package-lock.json` resolves over https from hosts the current one
+  already uses, with integrity, at the planned versions; then it runs `npm ci --ignore-scripts` in the repository.
+  npm runs as node plus npm's own CLI, argv only, with the same environment scrub as `run_checks`, no `npm_config_*`
+  variables, and `--allow-git=none` (an npm without it is refused), empty user and global config files, the public
+  registry, `--replace-registry-host=never`, `--strict-ssl=true` and `--git=git` on the command line, which outranks
+  any `.npmrc`. A lockfile with a git, file, ssh or http dependency is refused before npm runs; a project on a private
+  registry runs `harbyn migrate` in a terminal instead.
+- `open_pr` commits exactly the files `apply_fix` wrote in this session, with the hashes it recorded, on top of a
+  `HEAD` that is already on the remote's default branch. The commit is built with git plumbing on a temporary index in
+  the cache directory (`read-tree`, `hash-object --no-filters`, `update-index --cacheinfo`, `write-tree`,
+  `commit-tree`), so the checkout, the index and the current branch do not move. `update-ref` creates
+  `refs/heads/harbyn/<event>` only if it does not exist; the push sends only that ref, with an explicit refspec, no
+  force and a create-only `--force-with-lease=refs/heads/<branch>:` (accepted only if the branch does not exist), to
+  the push URL git resolved for the remote (https or ssh only; anything else, including `file:` and `ext::`,
+  is refused). gh (from `PATH` only) must be signed in; a branch or pull request that exists for the change, open or
+  closed, stops it, and the pull request is a draft. Every git and gh process gets `core.hooksPath` set to an empty
+  directory, `core.fsmonitor=false`, signing off and `GIT_ALLOW_PROTOCOL=https:ssh`, through `GIT_CONFIG_COUNT`, which
+  outranks the repository's config. A repository whose own config sets a credential helper, URL rewrite, include,
+  filter, proxy, or any command or program is refused, with the key names. Without gh, or not signed in, it returns
+  the patch, the pull request text and the commands. It never merges, approves or reopens. On the free plan
+  `apply_fix` writes nothing, so `open_pr` has nothing to commit: you commit your agent's edits yourself.
 - `run_checks` runs your configuration's command (`mcp-settings.json` in Harbyn's config directory:
   `{"projects": {"<absolute repo path>": {"test": ["make", "test"]}}, "allowEnv": []}`), else the project's
   `package.json` script (`npm run <check> --ignore-scripts` through npm's own CLI next to Node; refused when a pre or
   post script exists or the script is over 2000 characters), `tsc --noEmit` or `python -m pytest`. Argv only, no shell,
   stdin closed, environment variables named like credentials or connection strings removed, 10-minute limit with the
   process tree killed, last 64 KB of output. The command runs as you and can still read files such as `~/.npmrc`.
-- Confirmation: through the client's own form when it supports MCP elicitation. Without it, the two tools refuse unless
+- Confirmation: through the client's own form when it supports MCP elicitation. Without it, the three tools refuse unless
   you set `"tokenConfirmation": true` in `mcp-settings.json`; then a first answer carries the full summary and a
   single-use token bound to exactly those changes or that command, valid for 10 minutes. A summary too long to show
   in full is refused, never shortened.
 - Every write and check is recorded in a local ledger in Harbyn's cache directory, never in the repository.
 - Network: the signed feed from `https://feed.harbyn.com` and, only after `harbyn login`, `https://api.harbyn.com/cli`
-  (whoami and the engine). No telemetry. The server never handles the sign-in itself.
+  (whoami and the engine). No telemetry. The server never handles the sign-in itself. The programs it starts after
+  you confirm reach your own services with your own credentials, which it never reads: git and gh your remote and
+  GitHub (`open_pr`), npm your registry (a migration).
 - Tool names and descriptions are fixed text. Text from your code and from the feed is returned in named fields and,
   in the text answer, inside a block marked untrusted with a per-call nonce; control, bidi and zero-width characters
   are replaced.
 - The server is its own file, `mcp/harbyn-mcp.mjs`, loaded by the CLI only for this command. One module of it,
-  `src/mcp/exec.ts`, starts processes (`run_checks` and `git`); the CLI and Action bundles start none.
+  `src/mcp/exec.ts`, starts processes (`run_checks`, `git`, `gh` and npm); the CLI and Action bundles start none.
 
 ## What it does and does not do
 
