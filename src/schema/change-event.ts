@@ -95,6 +95,13 @@ export const pricePoint = z.strictObject({
   after: z.number().nonnegative().finite().nullable(),
 });
 
+export const isHighImpact = (e: { severity: string; kind: string }): boolean =>
+  e.severity === "critical" ||
+  e.severity === "high" ||
+  e.kind === "security" ||
+  e.kind === "breaking" ||
+  e.kind === "retirement";
+
 export const changeEvent = z
   .strictObject({
     schemaVersion: z.literal(1),
@@ -205,13 +212,7 @@ export const changeEvent = z
         message: "retracted events must say why",
       });
     }
-    const highImpact =
-      e.severity === "critical" ||
-      e.severity === "high" ||
-      e.kind === "security" ||
-      e.kind === "breaking" ||
-      e.kind === "retirement";
-    if (highImpact && e.review.extractedBy === "llm" && e.review.state !== "human-reviewed") {
+    if (isHighImpact(e) && e.review.extractedBy === "llm" && e.review.state !== "human-reviewed") {
       ctx.addIssue({
         code: "custom",
         path: ["review"],

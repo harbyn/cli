@@ -2,7 +2,7 @@ import type { FeedIndex } from "../schema/index.ts";
 import { engineKnowledge, feedIndex } from "../schema/index.ts";
 import type { LoadedFeed } from "./load.ts";
 
-const DEFAULT_TTL_DAYS = 14;
+export const DEFAULT_TTL_DAYS = 4;
 
 export const canonicalJson = (value: unknown): string => {
   if (Array.isArray(value)) return `[${value.map(canonicalJson).join(",")}]`;

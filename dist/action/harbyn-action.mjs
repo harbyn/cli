@@ -12502,6 +12502,7 @@ var pricePoint = external_exports.strictObject({
   before: external_exports.number().nonnegative().finite().nullable(),
   after: external_exports.number().nonnegative().finite().nullable()
 });
+var isHighImpact = (e) => e.severity === "critical" || e.severity === "high" || e.kind === "security" || e.kind === "breaking" || e.kind === "retirement";
 var changeEvent = external_exports.strictObject({
   schemaVersion: external_exports.literal(1),
   id: external_exports.string().max(160).regex(/^[a-z0-9-]+\/\d{4}-\d{2}-\d{2}-[a-z0-9]+(?:-[a-z0-9]+)*$/),
@@ -12596,8 +12597,7 @@ var changeEvent = external_exports.strictObject({
       message: "retracted events must say why"
     });
   }
-  const highImpact = e.severity === "critical" || e.severity === "high" || e.kind === "security" || e.kind === "breaking" || e.kind === "retirement";
-  if (highImpact && e.review.extractedBy === "llm" && e.review.state !== "human-reviewed") {
+  if (isHighImpact(e) && e.review.extractedBy === "llm" && e.review.state !== "human-reviewed") {
     ctx.addIssue({
       code: "custom",
       path: ["review"],
@@ -12761,7 +12761,7 @@ var loadFeed = (root) => {
 };
 
 // src/feed/build.ts
-var DEFAULT_TTL_DAYS = 14;
+var DEFAULT_TTL_DAYS = 4;
 var canonicalJson = (value) => {
   if (Array.isArray(value)) return `[${value.map(canonicalJson).join(",")}]`;
   if (value !== null && typeof value === "object") {
@@ -12875,7 +12875,7 @@ import { join as join2 } from "node:path";
 
 // src/product.ts
 var CLI_NAME = "harbyn";
-var CLI_VERSION = true ? "0.13.0" : "0.0.0-dev";
+var CLI_VERSION = true ? "0.14.0" : "0.0.0-dev";
 var PAID_FIX_MESSAGE = `Automatic fixes and SDK migrations are part of Harbyn Pro and Team.
 Switch them on for a repository from the dashboard, no terminal needed: https://harbyn.com/pricing
 This open-source CLI finds what will break and where: run \`${CLI_NAME} scan\`.`;
@@ -14673,6 +14673,8 @@ if (onUploadError !== "warn" && onUploadError !== "fail")
 var now = /* @__PURE__ */ new Date();
 var today = now.toISOString().slice(0, 10);
 var feedDir = input2("feed-dir");
+if (remediate === "true" && feedDir)
+  fail("remediate needs the signed feed: remove feed-dir (it is for development scans only)");
 var isFixReport = (value) => {
   const r = value;
   return typeof r === "object" && r !== null && ["allowed", "blocked", "unknown"].includes(String(r.pullRequests)) && Number.isInteger(r.opened) && r.opened >= 0 && r.opened <= 100;

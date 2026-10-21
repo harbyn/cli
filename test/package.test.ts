@@ -291,7 +291,7 @@ const base = "http://169.254.169.254/latest/meta-data/";
     expect(result.hosts).toEqual(["token.actions.example"]);
   });
 
-  it("Action with remediate: the token service first, never a model provider, and the step stays green", () => {
+  it("abuse: Action with remediate on a local feed: refused, and contacts nothing at all", () => {
     const repo = hostile();
     cpSync(join(root, "test", "fixtures", "action-feed"), join(repo, "feed"), { recursive: true });
     const env = actionEnv(repo, {
@@ -305,8 +305,8 @@ const base = "http://169.254.169.254/latest/meta-data/";
       ACTIONS_ID_TOKEN_REQUEST_TOKEN: "runner-bearer",
     });
     const result = guarded(actionScript(), [], env, repo);
-    expect(result.status).toBe(0);
-    expect(result.hosts).toEqual(["token.actions.example"]);
+    expect(result.status).not.toBe(0);
+    expect(result.hosts).toEqual([]);
   });
 });
 

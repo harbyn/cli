@@ -70,6 +70,8 @@ export const resolveInside = (root: string, path: string): { full: string; rel: 
   if (parts.some((p) => NEVER.has(folded(p))))
     throw new PathRefused("the path is inside .git or node_modules");
   if (parts.some((p) => /~\d/.test(p))) throw new PathRefused("the path uses a short (8.3) name");
+  if (parts.some((p) => /[:<>"|?*]/.test(p)))
+    throw new PathRefused('the path contains a character Windows reserves (: < > " | ? *)');
   let full = root;
   for (const part of parts) {
     full = join(full, part);

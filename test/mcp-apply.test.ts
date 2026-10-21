@@ -84,6 +84,15 @@ const applyWithToken = async (s: ReturnType<typeof setup>, args: S) => {
 };
 
 describe("apply_fix: the free/paid line cannot be crossed", () => {
+  it("abuse: with an unsigned --feed-dir feed, a paid sign-in still gets no engine and nothing is written", async () => {
+    const { root, s, p } = paidSession(greedyEngine(), {}, { unsignedFeed: true });
+    const before = snapshot(root);
+    const plan = await s.call("plan_fix", { findingId: await findingIn(s, "src/ai.ts") });
+    expect(JSON.stringify(plan.structured)).toMatch(/signed feed/);
+    expect(snapshot(root)).toEqual(before);
+    expect(p.n.urls.some((u: string) => u.includes("engine"))).toBe(false);
+  });
+
   it("no login: never writes, returns the free plan, ignores edits and tokens, and asks no server", async () => {
     const root = gitRepo();
     const before = snapshot(root);

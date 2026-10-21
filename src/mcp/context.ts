@@ -23,6 +23,7 @@ const MAX_PLANS = 100;
 
 export interface McpOptions {
   feedDir?: string;
+  unsignedFeed?: boolean;
   offline?: boolean;
   fetch: Fetch;
   download?: Download;
@@ -308,6 +309,8 @@ export class McpContext {
 
   async engine(): Promise<EngineState> {
     if (this.engineState?.ok) return this.engineState;
+    if (this.options.unsignedFeed)
+      return { ok: false, message: "fixes need the signed feed: restart without --feed-dir" };
     const token = readToken(this.options.configDir ?? configDir());
     if (!token) return { ok: false, message: "not signed in" };
     const loaded = await loadEngine({

@@ -603,6 +603,25 @@ describe("paths and root", () => {
     expect(resolveInside(root.root, "./src//a.ts").rel).toBe("src/a.ts");
   });
 
+  it("abuse: NTFS stream names cannot reach .git, and reserved characters are refused everywhere", () => {
+    const root = checkRoot(repo({ "src/a.ts": "" }));
+    if (!root.ok) throw new Error(root.reason);
+    const streams = [
+      ".git::$INDEX_ALLOCATION/config",
+      ".git::$INDEX_ALLOCATION",
+      ".GIT::$index_allocation/HEAD",
+      "node_modules::$INDEX_ALLOCATION/x",
+      ".git:$I30:$INDEX_ALLOCATION/config",
+      "src/a.ts::$DATA",
+      "src/a.ts:hidden",
+    ];
+    const reserved = ["src/a?.ts", "src/*.ts", "src/<a>.ts", 'src/"a".ts', "src/a|b.ts"];
+    for (const bad of [...streams, ...reserved]) {
+      expect(() => resolveInside(root.root, bad), bad).toThrow(/character Windows reserves/);
+    }
+    expect(readInside(root.root, ".git::$INDEX_ALLOCATION/config")).toBeUndefined();
+  });
+
   it("refuses a symbolic link (or junction) in any component", async () => {
     const outside = write(mkdtempSync(join(tmpdir(), "outside-")), {
       "leak.ts": 'model: "acme-1"\n',

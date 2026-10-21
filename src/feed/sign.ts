@@ -14,7 +14,7 @@ import {
   type SignatureEnvelope,
   signatureEnvelope,
 } from "../schema/index.ts";
-import { canonicalJson } from "./build.ts";
+import { canonicalJson, DEFAULT_TTL_DAYS } from "./build.ts";
 
 export type TrustedKeys = Readonly<Record<string, string>>;
 
@@ -88,7 +88,9 @@ export const buildEngineRelease = (input: {
     purpose: "harbyn-engine-release",
     commit: input.commit,
     generatedAt: toIsoSeconds(input.now),
-    expiresAt: toIsoSeconds(new Date(input.now.getTime() + (input.ttlDays ?? 14) * 86_400_000)),
+    expiresAt: toIsoSeconds(
+      new Date(input.now.getTime() + (input.ttlDays ?? DEFAULT_TTL_DAYS) * 86_400_000),
+    ),
     engine: { sha256: sha256Hex(input.engine), bytes: input.engine.byteLength },
     knowledge: { sha256: sha256Hex(input.knowledge), bytes: input.knowledge.byteLength },
   });

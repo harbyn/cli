@@ -92,7 +92,7 @@ export const runMcp = async (
     fetch: (url, init) => fetch(url, init),
     offline: argv.includes("--offline"),
     fallbackRoot: stdio.cwd,
-    ...(feedDir ? { feedDir: resolve(stdio.cwd, feedDir) } : {}),
+    ...(feedDir ? { feedDir: resolve(stdio.cwd, feedDir), unsignedFeed: true } : {}),
     onWarning: (message) => stdio.error(`warning: ${message}`),
     ...overrides,
   });

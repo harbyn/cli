@@ -59,7 +59,7 @@ inputs:
     required: false
     default: warn
   feed-dir:
-    description: Development only. Reads an unsigned feed from a directory in the repository instead of downloading the signed feed.
+    description: Development only. Reads an unsigned feed from a directory in the repository instead of downloading the signed feed. Refused together with remediate.
     required: false
     default: ""
 

@@ -77,6 +77,8 @@ if (onUploadError !== "warn" && onUploadError !== "fail")
 const now = new Date();
 const today = now.toISOString().slice(0, 10);
 const feedDir = input("feed-dir");
+if (remediate === "true" && feedDir)
+  fail("remediate needs the signed feed: remove feed-dir (it is for development scans only)");
 
 const isFixReport = (value: unknown): value is FixReport => {
   const r = value as Partial<FixReport> | null | undefined;
