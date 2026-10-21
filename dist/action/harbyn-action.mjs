@@ -12875,14 +12875,16 @@ import { join as join2 } from "node:path";
 
 // src/product.ts
 var CLI_NAME = "harbyn";
-var CLI_VERSION = true ? "0.14.1" : "0.0.0-dev";
+var CLI_VERSION = true ? "0.15.0" : "0.0.0-dev";
 var PAID_FIX_MESSAGE = `Automatic fixes and SDK migrations are part of Harbyn Pro and Team.
 Switch them on for a repository from the dashboard, no terminal needed: https://harbyn.com/pricing
 This open-source CLI finds what will break and where: run \`${CLI_NAME} scan\`.`;
 
 // src/remote-feed.ts
+var FEED_RECOVERY_KEY_ID = "d46fdcaf720b8e0b";
 var PRODUCTION_KEYS = {
-  "78e488880f4fca98": "MCowBQYDK2VwAyEAae5XSWv2jl/tO6akP1MXv1FdrCpGhWa3x3D9y1aktsM="
+  "78e488880f4fca98": "MCowBQYDK2VwAyEAae5XSWv2jl/tO6akP1MXv1FdrCpGhWa3x3D9y1aktsM=",
+  [FEED_RECOVERY_KEY_ID]: "MCowBQYDK2VwAyEA2CA4i57YlJGoOGZ72AtMSCqGYvcs/w3R1PnPNxcXAzE="
 };
 var DEFAULT_FEED_URL = "https://feed.harbyn.com/v1/feed.json";
 var MAX_FEED_BYTES = 20 * 1024 * 1024;
@@ -12992,8 +12994,10 @@ var loadRemoteFeed = async (options = {}) => {
 
 // src/engine.ts
 var ENGINE_ABI = 1;
+var ENGINE_RECOVERY_KEY_ID = "1798d44c4fa9b587";
 var ENGINE_KEYS = {
-  "2813f379542269f5": "MCowBQYDK2VwAyEAvAc5oM0tUCruFHByBrDd0xPhndNvMI4xgTCgZZzS/mg="
+  "2813f379542269f5": "MCowBQYDK2VwAyEAvAc5oM0tUCruFHByBrDd0xPhndNvMI4xgTCgZZzS/mg=",
+  [ENGINE_RECOVERY_KEY_ID]: "MCowBQYDK2VwAyEAIisB8JCzxW3HyghYey2tbU1wcKSE91esa+49e0xY6Ks="
 };
 var ENGINE_URL = "https://api.harbyn.com/ingest/engine";
 var CLI_ENGINE_URL = "https://api.harbyn.com/cli/engine";

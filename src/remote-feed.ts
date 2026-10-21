@@ -5,8 +5,10 @@ import { FeedVerificationError, type TrustedKeys, verifyFeed } from "./feed/inde
 import type { FeedIndex } from "./schema/index.ts";
 import { CLI_NAME } from "./product.ts";
 
+export const FEED_RECOVERY_KEY_ID = "d46fdcaf720b8e0b";
 export const PRODUCTION_KEYS: TrustedKeys = {
   "78e488880f4fca98": "MCowBQYDK2VwAyEAae5XSWv2jl/tO6akP1MXv1FdrCpGhWa3x3D9y1aktsM=",
+  [FEED_RECOVERY_KEY_ID]: "MCowBQYDK2VwAyEA2CA4i57YlJGoOGZ72AtMSCqGYvcs/w3R1PnPNxcXAzE=",
 };
 export const DEFAULT_FEED_URL = "https://feed.harbyn.com/v1/feed.json";
 

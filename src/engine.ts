@@ -24,8 +24,10 @@ import type { Fetch } from "./upload.ts";
 
 export const ENGINE_ABI = 1;
 
+export const ENGINE_RECOVERY_KEY_ID = "1798d44c4fa9b587";
 export const ENGINE_KEYS: TrustedKeys = {
   "2813f379542269f5": "MCowBQYDK2VwAyEAvAc5oM0tUCruFHByBrDd0xPhndNvMI4xgTCgZZzS/mg=",
+  [ENGINE_RECOVERY_KEY_ID]: "MCowBQYDK2VwAyEAIisB8JCzxW3HyghYey2tbU1wcKSE91esa+49e0xY6Ks=",
 };
 
 export const ENGINE_URL = "https://api.harbyn.com/ingest/engine";

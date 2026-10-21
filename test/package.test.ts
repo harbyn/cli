@@ -188,6 +188,8 @@ describe("published package", () => {
   it("ships the pinned production feed key, and fails closed when the feed cannot be fetched", () => {
     expect(bundle).toContain("78e488880f4fca98");
     expect(bundle).toContain("2813f379542269f5");
+    expect(bundle).toContain("d46fdcaf720b8e0b");
+    expect(bundle).toContain("1798d44c4fa9b587");
     const repo = write(mkdtempSync(join(tmpdir(), "repo-")), { "a.ts": "" });
     const result = cli(["scan", repo, "--feed-url", "https://127.0.0.1:9/feed.json"], installed);
     expect(result.status).toBe(2);
