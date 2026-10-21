@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { appendFileSync, chmodSync, lstatSync, mkdirSync, realpathSync, renameSync } from "node:fs";
-import { isAbsolute, join, relative, resolve } from "node:path";
+import { join, resolve } from "node:path";
+import { isInside } from "./paths.ts";
 
 const MAX_LEDGER_BYTES = 5 * 1024 * 1024;
 
@@ -10,17 +11,12 @@ export interface LedgerEntry {
   [field: string]: unknown;
 }
 
-const inside = (parent: string, child: string): boolean => {
-  const rel = relative(parent, child);
-  return rel === "" || (!rel.startsWith("..") && !isAbsolute(rel));
-};
-
 export const ledgerFile = (
   cacheDir: string,
   root: string,
 ): { file: string } | { error: string } => {
   const dir = resolve(cacheDir, "ledger");
-  if (inside(root, dir))
+  if (isInside(root, dir))
     return {
       error: "the cache directory is inside the repository: the ledger is never written there",
     };
@@ -28,7 +24,7 @@ export const ledgerFile = (
     mkdirSync(dir, { recursive: true, mode: 0o700 });
     if (process.platform !== "win32") chmodSync(dir, 0o700);
     const real = realpathSync(dir);
-    if (inside(root, real))
+    if (isInside(root, real))
       return {
         error: "the cache directory is inside the repository: the ledger is never written there",
       };

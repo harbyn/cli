@@ -1,6 +1,6 @@
 import { createHash, randomBytes } from "node:crypto";
 import { mkdirSync, rmSync, writeFileSync } from "node:fs";
-import { isAbsolute, join, relative, resolve } from "node:path";
+import { join, resolve } from "node:path";
 import { defineTool } from "../mcp-protocol/index.ts";
 import { type ChangeEvent, deadlineOf, type FeedIndex } from "../schema/index.ts";
 import { z } from "zod";
@@ -33,7 +33,7 @@ import {
   validRemoteName,
 } from "./git.ts";
 import { appendLedger } from "./ledger.ts";
-import { fileForWrite, LOCKFILE, MAX_LOCKFILE_BYTES, PathRefused } from "./paths.ts";
+import { fileForWrite, isInside, LOCKFILE, MAX_LOCKFILE_BYTES, PathRefused } from "./paths.ts";
 import { clean, DATA_RULE, fence, MAX_SUMMARY_CHARS, NO_ELICITATION } from "./text.ts";
 
 const MAX_BODY = 60_000;
@@ -50,11 +50,6 @@ const eventIdSchema = z
 
 export const branchFor = (eventId: string): string =>
   `harbyn/${eventId.replace("/", "-")}`.replace(/[^A-Za-z0-9._/-]/g, "-").slice(0, 200);
-
-const inside = (parent: string, child: string): boolean => {
-  const rel = relative(parent, child);
-  return rel === "" || (!rel.startsWith("..") && !isAbsolute(rel));
-};
 
 const md = (s: string): string =>
   safe(s)
@@ -336,7 +331,7 @@ export const openPrTool = (ctx: McpContext) =>
       }
 
       const hooksBase = ctx.cacheDir();
-      if (inside(root, resolve(hooksBase)))
+      if (isInside(root, resolve(hooksBase)))
         return {
           error: "the cache directory is inside the repository: open_pr does not run there",
         };

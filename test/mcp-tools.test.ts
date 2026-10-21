@@ -1,9 +1,11 @@
 import { createHash, generateKeyPairSync } from "node:crypto";
 import {
+  existsSync,
   mkdirSync,
   mkdtempSync,
   readdirSync,
   readFileSync,
+  realpathSync,
   statSync,
   symlinkSync,
   writeFileSync,
@@ -602,6 +604,20 @@ describe("paths and root", () => {
     expect(resolveInside(root.root, "src/a.ts").rel).toBe("src/a.ts");
     expect(resolveInside(root.root, "./src//a.ts").rel).toBe("src/a.ts");
   });
+
+  it.skipIf(process.platform === "win32")(
+    "abuse: a cache folder reached through a link is still seen as inside the repository, before anything is created",
+    async () => {
+      const { isInside, realPathOf } = await import("../src/mcp/paths.ts");
+      const real = mkdtempSync(join(tmpdir(), "real-"));
+      const alias = join(mkdtempSync(join(tmpdir(), "alias-")), "repo");
+      symlinkSync(real, alias, "dir");
+      expect(isInside(real, join(alias, ".cache", "ledger"))).toBe(true);
+      expect(realPathOf(join(alias, "not", "yet"))).toBe(join(realpathSync(real), "not", "yet"));
+      expect(existsSync(join(real, ".cache"))).toBe(false);
+      expect(isInside(real, join(tmpdir(), "elsewhere"))).toBe(false);
+    },
+  );
 
   it("abuse: NTFS stream names cannot reach .git, and reserved characters are refused everywhere", () => {
     const root = checkRoot(repo({ "src/a.ts": "" }));

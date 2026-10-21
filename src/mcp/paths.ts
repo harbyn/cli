@@ -11,7 +11,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { homedir } from "node:os";
-import { dirname, isAbsolute, join, relative, sep } from "node:path";
+import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { isSecretFile } from "../walk.ts";
 
 export const MAX_FILE_BYTES = 1024 * 1024;
@@ -21,6 +21,27 @@ const MAX_PATH_CHARS = 1024;
 const NEVER = new Set([".git", "node_modules"]);
 
 export class PathRefused extends Error {}
+
+export const realPathOf = (path: string): string => {
+  let existing = resolve(path);
+  const rest: string[] = [];
+  while (!existsSync(existing)) {
+    const parent = dirname(existing);
+    if (parent === existing) break;
+    rest.unshift(basename(existing));
+    existing = parent;
+  }
+  try {
+    return join(realpathSync(existing), ...rest);
+  } catch {
+    return resolve(path);
+  }
+};
+
+export const isInside = (root: string, path: string): boolean => {
+  const rel = relative(realPathOf(root), realPathOf(path));
+  return rel === "" || (!rel.startsWith("..") && !isAbsolute(rel));
+};
 
 export const checkRoot = (
   candidate: string,

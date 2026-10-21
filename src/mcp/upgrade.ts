@@ -9,7 +9,7 @@ import {
   rmSync,
   writeFileSync,
 } from "node:fs";
-import { dirname, isAbsolute, join, relative, resolve } from "node:path";
+import { dirname, isAbsolute, join, resolve } from "node:path";
 import type { ToolSession } from "../mcp-protocol/index.ts";
 import { z } from "zod";
 import type { EngineMigrationComputed, EngineModule, EngineUpgrade } from "../engine.ts";
@@ -26,6 +26,7 @@ import { CHECK_TIMEOUT_MS, gitClean, runArgv } from "./exec.ts";
 import { appendLedger, ledgerFile } from "./ledger.ts";
 import {
   fileForWrite,
+  isInside,
   LOCKFILE,
   MAX_LOCKFILE_BYTES,
   PathRefused,
@@ -88,7 +89,7 @@ const npmRunner = (
 ):
   | { npm: string[]; isolation: string[]; npmEnv: Record<string, string>; version: string }
   | { error: string } => {
-  if (inside(root, resolve(ctx.cacheDir())))
+  if (isInside(root, resolve(ctx.cacheDir())))
     return { error: "the cache directory is inside the repository: nothing is prepared there" };
   const execPath = ctx.options.execPath ?? process.execPath;
   const npmCli = findNpmCli(execPath, ctx.env());
@@ -148,11 +149,6 @@ const computedSchema = z.object({
     )
     .max(200),
 });
-
-const inside = (parent: string, child: string): boolean => {
-  const rel = relative(parent, child);
-  return rel === "" || (!rel.startsWith("..") && !isAbsolute(rel));
-};
 
 const sha256 = (data: Buffer | string): string => createHash("sha256").update(data).digest("hex");
 
@@ -509,7 +505,7 @@ const migrationStep = async (ctx: McpContext, r: MigrationRequest): Promise<Answ
       };
   }
   const work = resolve(ctx.cacheDir(), "migrate", plan.planId);
-  if (inside(root, work))
+  if (isInside(root, work))
     return { error: "the cache directory is inside the repository: nothing is prepared there" };
   let npmrc: { size: number; mtimeMs: number } | null = null;
   try {
@@ -607,7 +603,7 @@ const migrationStep = async (ctx: McpContext, r: MigrationRequest): Promise<Answ
       return {
         error: `nothing in the repository changed: ${clean(prepared?.ok === false ? prepared.reason : "the engine failed")}`,
       };
-    if (inside(root, newDir)) return { error: "the cache directory is inside the repository" };
+    if (isInside(root, newDir)) return { error: "the cache directory is inside the repository" };
     const install = await step(newDir, ["install", ...NPM_FLAGS]);
     if (install) return { error: `nothing in the repository changed: ${install}` };
     let raw: EngineMigrationComputed | undefined;
