@@ -44,14 +44,14 @@ file in the repository.
 PHP core advisories are matched at patch level: a PHP release is affected when it is older than the fixed release of
 its branch, or when its branch gets no fixed release at all.
 
-| File                                                    | Read                                                           | Pin      |
-| ------------------------------------------------------- | -------------------------------------------------------------- | -------- |
-| `Dockerfile`, `Containerfile`, `*.Dockerfile`           | `FROM php:<tag>` (official image), `ARG PHP_VERSION=` used by it | tag      |
-| `docker-compose.yml`, `compose.yaml` and variants       | `image: php:<tag>`                                             | tag      |
-| `.php-version`                                          | the first line                                                 | version  |
-| `.tool-versions`                                        | `php <version>`                                                | version  |
-| `composer.json`                                         | `config.platform.php`; `require.php`, the lowest allowed       | version / constraint |
-| `.github/workflows/*.yml` using `shivammathur/setup-php` | `php-version` and matrix lists                                | version  |
+| File                                                     | Read                                                             | Pin                  |
+| -------------------------------------------------------- | ---------------------------------------------------------------- | -------------------- |
+| `Dockerfile`, `Containerfile`, `*.Dockerfile`            | `FROM php:<tag>` (official image), `ARG PHP_VERSION=` used by it | tag                  |
+| `docker-compose.yml`, `compose.yaml` and variants        | `image: php:<tag>`                                               | tag                  |
+| `.php-version`                                           | the first line                                                   | version              |
+| `.tool-versions`                                         | `php <version>`                                                  | version              |
+| `composer.json`                                          | `config.platform.php`; `require.php`, the lowest allowed         | version / constraint |
+| `.github/workflows/*.yml` using `shivammathur/setup-php` | `php-version` and matrix lists                                   | version              |
 
 A full version (`8.3.35`, `php:8.3.35-fpm`) is affected or not. A minor version (`php:8.4`, `'8.4'`) follows the newest
 patch of its branch: rebuild or re-pull, then check `php -v`. A Composer constraint does not choose the PHP that runs;
