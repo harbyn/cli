@@ -7,6 +7,7 @@ import {
   satisfies,
   type Vendor,
 } from "./schema/index.ts";
+import type { PhpFinding } from "./php.ts";
 import type { SourceFile } from "./walk.ts";
 
 export type FindingContext = "code" | "test" | "docs" | "catalog";
@@ -19,6 +20,7 @@ export interface Finding {
   path: string;
   line: number;
   context: FindingContext;
+  php?: PhpFinding;
 }
 
 export interface VendorUsage {

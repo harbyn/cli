@@ -2,6 +2,7 @@ import type { FeedIndex } from "./schema/index.ts";
 import { type Finding, Matcher, preferAdvisories, type VendorUsage } from "./match.ts";
 import { InventoryCollector } from "./inventory.ts";
 import type { ScanResult } from "./report.ts";
+import { PhpMatcher } from "./php.ts";
 import { RuntimeMatcher } from "./runtimes.ts";
 import { newStats, type WalkOptions, walk } from "./walk.ts";
 
@@ -11,6 +12,7 @@ export * from "./inventory.ts";
 export * from "./match.ts";
 export * from "./remote-feed.ts";
 export * from "./report.ts";
+export * from "./php.ts";
 export * from "./runtimes.ts";
 export * from "./sensitive.ts";
 export * from "./walk.ts";
@@ -23,6 +25,7 @@ export const scan = (root: string, feed: FeedIndex, options: WalkOptions = {}): 
   const usage = new Map<string, VendorUsage>();
   const matcher = new Matcher(feed);
   const runtimes = new RuntimeMatcher(feed);
+  const php = new PhpMatcher(feed);
   const inventory = new InventoryCollector();
   for (const file of walk(root, stats, {
     ...options,
@@ -30,9 +33,10 @@ export const scan = (root: string, feed: FeedIndex, options: WalkOptions = {}): 
   })) {
     matcher.scanFile(file, findings, usage);
     runtimes.scanFile(file);
+    php.scanFile(file);
     inventory.add(file.path, file.text);
   }
-  findings.push(...runtimes.findings());
+  findings.push(...runtimes.findings(), ...php.findings());
   return {
     findings: preferAdvisories(findings),
     usage: [...usage.values()].sort((a, b) => a.vendor.id.localeCompare(b.vendor.id)),

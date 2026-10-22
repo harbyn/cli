@@ -2,6 +2,7 @@ import { type ChangeEvent, deadlineOf, parseVersion, type Version } from "./sche
 import { CLI_NAME } from "./product.ts";
 import type { Inventory } from "./inventory.ts";
 import type { Finding, VendorUsage } from "./match.ts";
+import { phpNextStep, phpShortStep } from "./php.ts";
 import type { WalkStats } from "./walk.ts";
 
 export interface ScanResult {
@@ -68,7 +69,7 @@ const before = (a: Version, b: Version): boolean =>
 
 const packageTargets = (
   targets: readonly Target[],
-  finding?: Pick<Finding, "via" | "token">,
+  finding?: Pick<Finding, "via" | "token" | "php">,
 ): PackageTarget[] => {
   const all = targets.filter((t): t is PackageTarget => t.type === "package");
   if (!finding || finding.via !== "package") return all;
@@ -100,8 +101,9 @@ const targetText = (t: Target): string[] => {
 
 export const replacementOf = (
   event: ChangeEvent,
-  finding?: Pick<Finding, "via" | "token">,
+  finding?: Pick<Finding, "via" | "token" | "php">,
 ): { label: string; text: string } | undefined => {
+  if (finding?.php) return phpNextStep(finding.php);
   const targets = event.replacement?.targets ?? [];
   const note = event.replacement?.note;
   const packages = packageTargets(targets, finding);
@@ -123,7 +125,7 @@ export const NO_REPLACEMENT =
 
 export const replacementLine = (
   event: ChangeEvent,
-  finding?: Pick<Finding, "via" | "token">,
+  finding?: Pick<Finding, "via" | "token" | "php">,
 ): string => {
   const r = replacementOf(event, finding);
   return r ? `${r.label}: ${r.text}` : NO_REPLACEMENT;
@@ -131,8 +133,9 @@ export const replacementLine = (
 
 export const replacementTargets = (
   event: ChangeEvent,
-  finding?: Pick<Finding, "via" | "token">,
+  finding?: Pick<Finding, "via" | "token" | "php">,
 ): string[] => {
+  if (finding?.php) return finding.php.fixed ? [`php${finding.php.fixed}`] : [];
   const targets = event.replacement?.targets ?? [];
   return [
     ...packageTargets(targets, finding),
@@ -220,13 +223,15 @@ export const toText = (result: ScanResult, today: string, showAll = false): stri
   for (const group of groups) {
     const event = (group[0] as Finding).event;
     out.push(`[${event.severity.toUpperCase()}] ${event.title}`);
-    out.push(`  ${safe(replacementLine(event, group[0]))}`);
+    out.push(
+      `  ${group.some((f) => f.php) && group.some((f) => f.php?.pin !== group[0]?.php?.pin || f.php?.fixed !== group[0]?.php?.fixed) ? "What to do: see each line" : safe(replacementLine(event, group[0]))}`,
+    );
     out.push(`  when:   ${deadlineLabel(event, today)}`);
     out.push(`  source: ${event.sources[0]?.url ?? "-"}`);
     const shown = group.slice(0, 12);
     for (const f of shown)
       out.push(
-        `    ${safe(f.path)}:${f.line}  ${safe(f.token)}${f.context === "code" ? "" : `  [${f.context}]`}`,
+        `    ${safe(f.path)}:${f.line}  ${safe(f.token)}${f.php ? `  -> ${phpShortStep(f.php)}` : ""}${f.context === "code" ? "" : `  [${f.context}]`}`,
       );
     if (group.length > shown.length) out.push(`    ... and ${group.length - shown.length} more`);
     out.push("");

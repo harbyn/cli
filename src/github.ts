@@ -26,6 +26,7 @@ export const workflowCommand = (level: Level, title: string, message: string): s
   `::${level} title=${escapeProperty(safe(title))}::${escapeData(cap(safe(message), MAX_MESSAGE))}`;
 
 export const levelOf = (finding: Finding, today: string): Level => {
+  if (finding.event.kind === "security" && finding.event.severity === "critical") return "error";
   const deadline = deadlineOf(finding.event)?.date;
   return deadline !== undefined && deadline <= today ? "error" : "warning";
 };

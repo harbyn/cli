@@ -2979,10 +2979,10 @@ var $ZodCIDRv4 = /* @__PURE__ */ $constructor("$ZodCIDRv4", (inst, def) => {
   $ZodStringFormat.init(inst, def);
 });
 function isValidCIDRv6(value) {
-  const parts = value.split("/");
-  if (parts.length !== 2)
+  const parts2 = value.split("/");
+  if (parts2.length !== 2)
     return false;
-  const [address, prefix] = parts;
+  const [address, prefix] = parts2;
   if (!prefix)
     return false;
   const prefixNum = Number(prefix);
@@ -7967,10 +7967,10 @@ function _readonly(Class2, innerType) {
   });
 }
 // @__NO_SIDE_EFFECTS__
-function _templateLiteral(Class2, parts, params) {
+function _templateLiteral(Class2, parts2, params) {
   return new Class2({
     type: "template_literal",
-    parts,
+    parts: parts2,
     ...normalizeParams(params)
   });
 }
@@ -8383,15 +8383,15 @@ function foldObjects(members2) {
     for (const key in object2.properties) {
       if (Object.prototype.hasOwnProperty.call(properties, key))
         continue;
-      const parts = [];
+      const parts2 = [];
       for (const other of objects) {
         const part = other.properties?.[key] ?? undeclaredConstraint(other);
         if (part === null || part === void 0)
           continue;
-        if (!parts.some((seen) => JSON.stringify(seen) === JSON.stringify(part)))
-          parts.push(part);
+        if (!parts2.some((seen) => JSON.stringify(seen) === JSON.stringify(part)))
+          parts2.push(part);
       }
-      const merged = parts.length === 1 ? parts[0] : foldObjects(parts) ?? { allOf: parts };
+      const merged = parts2.length === 1 ? parts2[0] : foldObjects(parts2) ?? { allOf: parts2 };
       assignProp(properties, key, merged);
     }
     for (const key of object2.required ?? [])
@@ -11123,10 +11123,10 @@ var ZodTemplateLiteral = /* @__PURE__ */ $constructor("ZodTemplateLiteral", (ins
   ZodType.init(inst, def);
   inst._zod.processJSONSchema = (ctx, json2, params) => templateLiteralProcessor(inst, ctx, json2, params);
 });
-function templateLiteral(parts, params) {
+function templateLiteral(parts2, params) {
   return new ZodTemplateLiteral({
     type: "template_literal",
-    parts,
+    parts: parts2,
     ...util_exports.normalizeParams(params)
   });
 }
@@ -11466,24 +11466,24 @@ function canonicalKey(value, seen) {
   seen.add(value);
   try {
     if (Array.isArray(value)) {
-      const parts2 = [];
+      const parts3 = [];
       for (const item of value) {
         const key = canonicalKey(item, seen);
         if (key === null)
           return null;
-        parts2.push(key);
+        parts3.push(key);
       }
-      return `a${parts2.length}:[${parts2.join(",")}]`;
+      return `a${parts3.length}:[${parts3.join(",")}]`;
     }
     const keys = Object.keys(value).sort();
-    const parts = [];
+    const parts2 = [];
     for (const k of keys) {
       const key = canonicalKey(value[k], seen);
       if (key === null)
         return null;
-      parts.push(`${k.length}:${k}=${key}`);
+      parts2.push(`${k.length}:${k}=${key}`);
     }
-    return `o${parts.length}:{${parts.join(",")}}`;
+    return `o${parts2.length}:{${parts2.join(",")}}`;
   } finally {
     seen.delete(value);
   }
@@ -12875,7 +12875,7 @@ import { join as join2 } from "node:path";
 
 // src/product.ts
 var CLI_NAME = "harbyn";
-var CLI_VERSION = true ? "0.15.0" : "0.0.0-dev";
+var CLI_VERSION = true ? "0.16.0" : "0.0.0-dev";
 var PAID_FIX_MESSAGE = `Automatic fixes and SDK migrations are part of Harbyn Pro and Team.
 Switch them on for a repository from the dashboard, no terminal needed: https://harbyn.com/pricing
 This open-source CLI finds what will break and where: run \`${CLI_NAME} scan\`.`;
@@ -13162,213 +13162,6 @@ var getFeed = async ({
   return remote.feed;
 };
 
-// src/report.ts
-var safe = (s) => Array.from(s, (ch) => {
-  const cp = ch.codePointAt(0) ?? 0;
-  const printable = cp >= 32 && cp <= 126 || cp >= 160 && cp < 8192 || cp >= 12288 && cp < 55296;
-  return printable ? ch : "?";
-}).join("");
-var daysBetween = (fromIso, toIso) => Math.round((Date.parse(toIso) - Date.parse(fromIso)) / 864e5);
-var MONTHS = [
-  "January",
-  "February",
-  "March",
-  "April",
-  "May",
-  "June",
-  "July",
-  "August",
-  "September",
-  "October",
-  "November",
-  "December"
-];
-var deadlineLabel = (event, today2) => {
-  if (event.effectiveMonth && !event.effectiveAt) {
-    const [year, month] = event.effectiveMonth.split("-");
-    const label = `${MONTHS[Number(month) - 1]} ${year}, no exact day announced`;
-    const days2 = daysBetween(today2, `${event.effectiveMonth}-01`);
-    if (today2.slice(0, 7) > event.effectiveMonth) return `ALREADY IN EFFECT since ${label}`;
-    if (days2 <= 0) return `THIS MONTH (${label})`;
-    return `in about ${days2} days (${label})`;
-  }
-  if (!event.effectiveAt)
-    return event.kind === "security" && event.status !== "announced" ? "now (security advisory, no deadline)" : "no date announced yet";
-  const days = daysBetween(today2, event.effectiveAt);
-  if (days < 0) return `ALREADY IN EFFECT since ${event.effectiveAt} (${-days} days ago)`;
-  if (days === 0) return `TODAY (${event.effectiveAt})`;
-  return `in ${days} days (${event.effectiveAt})`;
-};
-var floorOf = (range) => {
-  const m = /^>=?(\d{1,6}(?:\.\d{1,6}){0,2})$/.exec(range.trim());
-  return m ? parseVersion(m[1]) : void 0;
-};
-var before = (a, b) => a[0] - b[0] < 0 || a[0] === b[0] && (a[1] - b[1] < 0 || a[1] === b[1] && a[2] < b[2]);
-var packageTargets = (targets, finding) => {
-  const all = targets.filter((t) => t.type === "package");
-  if (!finding || finding.via !== "package") return all;
-  const at = finding.token.lastIndexOf("@");
-  const name = finding.token.slice(0, at);
-  const declared = parseVersion(finding.token.slice(at + 1));
-  const same = all.filter((t) => t.name === name);
-  if (!declared || same.length === 0) return all;
-  const above = same.map((t) => ({ t, floor: floorOf(t.range) })).filter(
-    (x) => x.floor !== void 0 && before(declared, x.floor)
-  ).sort((a, b) => before(a.floor, b.floor) ? -1 : before(b.floor, a.floor) ? 1 : 0);
-  return above.length > 0 ? [above[0].t] : same;
-};
-var targetText = (t) => {
-  switch (t.type) {
-    case "package":
-      return [`${t.name} ${t.range}`];
-    case "endpoint":
-      return [`${t.method} ${t.path}`];
-    default:
-      return t.values;
-  }
-};
-var replacementOf = (event, finding) => {
-  const targets = event.replacement?.targets ?? [];
-  const note = event.replacement?.note;
-  const packages = packageTargets(targets, finding);
-  if (packages.length > 0)
-    return { label: "Upgrade to", text: packages.flatMap(targetText).join(" or ") };
-  const others = targets.filter((t) => t.type !== "package");
-  if (note && others.every((t) => t.type === "symbol"))
-    return { label: others.length > 0 ? "Migrate to" : "What to do", text: note };
-  if (others.length > 0)
-    return {
-      label: "Migrate to",
-      text: `${others.flatMap(targetText).join(", ")}${note ? ` (${note})` : ""}`
-    };
-  return void 0;
-};
-var NO_REPLACEMENT = "Replacement: none named yet, by the vendor or by Harbyn; check the source before changing anything";
-var replacementLine = (event, finding) => {
-  const r = replacementOf(event, finding);
-  return r ? `${r.label}: ${r.text}` : NO_REPLACEMENT;
-};
-var replacementTargets = (event, finding) => {
-  const targets = event.replacement?.targets ?? [];
-  return [
-    ...packageTargets(targets, finding),
-    ...targets.filter((t) => t.type !== "package")
-  ].flatMap(targetText);
-};
-var toJson = (result2) => ({
-  schemaVersion: 1,
-  stats: result2.stats,
-  vendors: result2.usage.map((u) => ({ id: u.vendor.id, evidence: [...u.evidence].sort() })),
-  skippedNestedRepos: result2.stats.skippedNestedRepos,
-  findings: result2.findings.map((f) => ({
-    eventId: f.event.id,
-    kind: f.event.kind,
-    severity: f.event.severity,
-    effectiveAt: f.event.effectiveAt ?? null,
-    effectiveMonth: f.event.effectiveMonth ?? null,
-    via: f.via,
-    context: f.context,
-    token: f.token,
-    path: f.path,
-    line: f.line,
-    replacement: replacementTargets(f.event, f),
-    replacementNote: f.event.replacement?.note ?? null,
-    nextStep: replacementLine(f.event, f),
-    source: f.event.sources[0]?.url ?? null
-  })),
-  dependencies: result2.inventory?.dependencies ?? []
-});
-var actionable = (result2) => result2.findings.filter((f) => f.context === "code");
-
-// src/github.ts
-var MAX_ANNOTATIONS_PER_LEVEL = 10;
-var MAX_SUMMARY_ROWS = 500;
-var MAX_TITLE = 200;
-var MAX_MESSAGE = 900;
-var cap = (s, max) => s.length > max ? `${s.slice(0, max - 3)}...` : s;
-var escapeData = (s) => s.replaceAll("%", "%25").replaceAll("\r", "%0D").replaceAll("\n", "%0A");
-var escapeProperty = (s) => escapeData(s).replaceAll(":", "%3A").replaceAll(",", "%2C");
-var workflowCommand = (level, title, message) => `::${level} title=${escapeProperty(safe(title))}::${escapeData(cap(safe(message), MAX_MESSAGE))}`;
-var levelOf = (finding, today2) => {
-  const deadline = deadlineOf(finding.event)?.date;
-  return deadline !== void 0 && deadline <= today2 ? "error" : "warning";
-};
-var replacementOf2 = (finding) => {
-  const r = replacementOf(finding.event, finding);
-  return r ? `${r.label}: ${r.text}` : "";
-};
-var repoPath = (path, prefix) => prefix ? `${prefix}/${path}` : path;
-var byDeadline = (a, b) => (deadlineOf(a.event)?.date ?? "9999").localeCompare(deadlineOf(b.event)?.date ?? "9999") || a.path.localeCompare(b.path) || a.line - b.line;
-var toAnnotations = (result2, today2, pathPrefix2 = "") => {
-  const shown = { error: 0, warning: 0, notice: 0 };
-  const lines2 = [];
-  for (const finding of [...actionable(result2)].sort(byDeadline)) {
-    const level = levelOf(finding, today2);
-    if (shown[level] >= MAX_ANNOTATIONS_PER_LEVEL) continue;
-    shown[level] += 1;
-    const replacement = replacementOf2(finding);
-    const message = [
-      `${safe(finding.token)}: ${deadlineLabel(finding.event, today2)}.`,
-      replacement ? `${safe(replacement)}.` : "No replacement named yet.",
-      `Source: ${safe(finding.event.sources[0]?.url ?? "-")}`
-    ].filter(Boolean).join(" ");
-    const props = `file=${escapeProperty(safe(repoPath(finding.path, pathPrefix2)))},line=${finding.line},title=${escapeProperty(cap(safe(finding.event.title), MAX_TITLE))}`;
-    lines2.push(`::${level} ${props}::${escapeData(cap(message, MAX_MESSAGE))}`);
-  }
-  return lines2;
-};
-var mdText = (s) => Array.from(
-  safe(s),
-  (ch) => /[A-Za-z0-9 .,:;/=?@+-]/.test(ch) ? ch : `&#${ch.codePointAt(0)};`
-).join("");
-var mdLink = (url2) => url2 && /^https:\/\/[A-Za-z0-9.-]+(?:\/[A-Za-z0-9._~%/-]*)?(?:#[A-Za-z0-9._~-]*)?$/.test(url2) ? `[source](${url2})` : mdText(url2 ?? "-");
-var toStepSummary = (result2, today2, productName, pathPrefix2 = "", uploading = false) => {
-  const findings = [...actionable(result2)].sort(byDeadline);
-  const out = [`## ${mdText(productName)} scan`, ""];
-  if (findings.length === 0) {
-    out.push("No known dated vendor changes affect this repository.", "");
-  } else {
-    const errors = findings.filter((f) => levelOf(f, today2) === "error").length;
-    out.push(
-      `**${findings.length}** ${findings.length === 1 ? "line is" : "lines are"} affected by vendor changes (${errors} already due).`,
-      ""
-    );
-    out.push("| When | Change | Where | Use instead | |", "| --- | --- | --- | --- | --- |");
-    for (const f of findings.slice(0, MAX_SUMMARY_ROWS)) {
-      const replacement = replacementOf2(f);
-      out.push(
-        `| ${mdText(deadlineLabel(f.event, today2))} | ${mdText(f.event.title)} | ${mdText(`${repoPath(f.path, pathPrefix2)}:${f.line}`)} ${mdText(f.token)} | ${replacement ? mdText(replacement) : "-"} | ${mdLink(f.event.sources[0]?.url)} |`
-      );
-    }
-    out.push("");
-    if (findings.length > MAX_SUMMARY_ROWS) {
-      out.push(
-        `The table shows the first ${MAX_SUMMARY_ROWS}, by deadline. The JSON report (the \`report\` output) has all of them.`,
-        ""
-      );
-    }
-    const perLevel = { error: errors, warning: findings.length - errors };
-    if (perLevel.error > MAX_ANNOTATIONS_PER_LEVEL || perLevel.warning > MAX_ANNOTATIONS_PER_LEVEL) {
-      out.push(
-        `GitHub shows at most ${MAX_ANNOTATIONS_PER_LEVEL} annotations of each level on the lines; the table lists the rest.`,
-        ""
-      );
-    }
-  }
-  const low = result2.findings.length - findings.length;
-  if (low > 0)
-    out.push(
-      `${low} more in tests, docs and model catalogs (low confidence) are not annotated.`,
-      ""
-    );
-  const scanned = `${result2.stats.scanned} ${result2.stats.scanned === 1 ? "file" : "files"} scanned on the runner.`;
-  out.push(
-    uploading ? `${scanned} The upload below is everything that leaves the runner.` : `${scanned} Nothing about this repository was sent anywhere.`,
-    ""
-  );
-  return out.join("\n");
-};
-
 // src/match.ts
 var CATALOG_THRESHOLD = 6;
 var isIdChar = (ch) => ch !== void 0 && /[A-Za-z0-9_-]/.test(ch);
@@ -13652,6 +13445,577 @@ var Matcher = class {
   }
 };
 
+// src/php.ts
+var MAX_LINE = 1e3;
+var MAX_SPEC = 100;
+var MAX_DECLARATIONS = 100;
+var VERSION2 = /^([5-9])\.(0|[1-9][0-9]?)(?:\.(0|[1-9][0-9]{0,2}))?$/;
+var TAG = /^([5-9])\.(0|[1-9][0-9]?)(?:\.(0|[1-9][0-9]{0,2}))?(?:-[a-z0-9][a-z0-9.-]{0,63})?$/;
+var FROM = /^ *FROM +(?:--platform=[^ ]{1,64} +)?(?:docker\.io\/)?(?:library\/)?php:([A-Za-z0-9._${}-]{1,128})(@sha256:[0-9a-f]{64})?(?: +AS +[A-Za-z0-9._-]{1,64})? *(?:#.*)?$/di;
+var ARG = /^ *ARG +PHP_VERSION=["']?([0-9.]{1,12})["']? *(?:#.*)?$/di;
+var IMAGE = /^ *-? *image: *["']?(?:docker\.io\/)?(?:library\/)?php:([A-Za-z0-9._-]{1,128})(@sha256:[0-9a-f]{64})?["']? *(?:#.*)?$/d;
+var TOOL_VERSIONS = /^ *php +([0-9.]{1,12})(?: +[^ ].{0,200})? *(?:#.*)?$/d;
+var COMPOSER_VALUE = /^ *"php" *: *"([^"]{1,100})" *,? *$/d;
+var WORKFLOW_KEY = /^ *-? *(?:php|php-version|php-versions): *(.{0,400})$/d;
+var LIST_ITEM = /^ *- *["']?([0-9.]{1,12})["']? *(?:#.*)?$/d;
+var SCALAR = /^["']?([0-9.]{1,12})["']? *(?:#.*)?$/;
+var WORKFLOW_PATH = /^\.github\/workflows\/[^/]{1,100}\.ya?ml$/;
+var DOCKERFILE = /^(?:Dockerfile|Containerfile)(?:\.[A-Za-z0-9_-]{1,40})?$|^[A-Za-z0-9_-]{1,40}\.[Dd]ockerfile$/;
+var COMPOSE = /^(?:docker-)?compose(?:\.[A-Za-z0-9_-]{1,40})?\.ya?ml$/;
+var basename = (path) => path.slice(path.lastIndexOf("/") + 1);
+var withoutBom = (text) => text.charCodeAt(0) === 65279 ? text.slice(1) : text;
+var linesOf = (text) => withoutBom(text).split("\n").map((l) => l.length > MAX_LINE ? "" : l.replace(/\r$/, ""));
+var kindOf = (path, text) => {
+  const name = basename(path);
+  if (DOCKERFILE.test(name)) return "dockerfile";
+  if (COMPOSE.test(name)) return "compose";
+  if (name === ".php-version") return "php-version";
+  if (name === ".tool-versions") return "tool-versions";
+  if (name === "composer.json") return "composer";
+  if (WORKFLOW_PATH.test(path) && text.includes("shivammathur/setup-php")) return "workflow";
+  return void 0;
+};
+var isPhpFile = (path) => {
+  const name = basename(path);
+  return DOCKERFILE.test(name) || COMPOSE.test(name) || name === ".php-version" || name === ".tool-versions" || name === "composer.json" || WORKFLOW_PATH.test(path);
+};
+var parts = (version2) => {
+  const m = VERSION2.exec(version2);
+  return m ? [Number(m[1]), Number(m[2]), m[3] === void 0 ? void 0 : Number(m[3])] : void 0;
+};
+var pinOf = (version2) => {
+  const p = parts(version2);
+  return p ? p[2] === void 0 ? "floating" : "exact" : void 0;
+};
+var COMPOSER_COMPARATOR = /^(>=|<=|>|<|=|==|!=|\^|~)?v?([0-9]{1,2})(?:\.([0-9]{1,3}|\*))?(?:\.([0-9]{1,3}|\*))?(?:@[a-z]{1,10})?$/;
+var phpFloor = (spec) => {
+  if (spec.length > MAX_SPEC) return void 0;
+  const alternatives = spec.split(/\|\|?/);
+  if (alternatives.length > 8) return void 0;
+  let floor;
+  const less = (a, b) => a[0] - b[0] || a[1] - b[1] || a[2] - b[2];
+  for (const alternative of alternatives) {
+    const tokens = alternative.replace(/(>=|<=|>|<|==|=|!=|\^|~) +/g, "$1").trim().split(/[ ,]+/);
+    let lower;
+    for (const token of tokens) {
+      if (token === "" || token === "-") continue;
+      const m = COMPOSER_COMPARATOR.exec(token);
+      if (!m) return void 0;
+      const op = m[1] ?? "";
+      if (op === "<" || op === "<=" || op === "!=") continue;
+      const version2 = [
+        Number(m[2]),
+        m[3] === void 0 || m[3] === "*" ? 0 : Number(m[3]),
+        m[4] === void 0 || m[4] === "*" ? 0 : Number(m[4])
+      ];
+      if (!lower || less(version2, lower) > 0) lower = version2;
+    }
+    if (!lower) return void 0;
+    if (!floor || less(lower, floor) < 0) floor = lower;
+  }
+  if (!floor || floor[0] < 5 || floor[0] > 9) return void 0;
+  return floor.join(".");
+};
+var exactSpan = (m, group, version2) => {
+  const at = m.indices?.[group];
+  if (!at || pinOf(version2) !== "exact") return void 0;
+  return [at[0], at[0] + version2.length];
+};
+var fromTag = (tag, digest, m, line, shown) => {
+  if (!TAG.test(tag)) return void 0;
+  const version2 = tag.split("-")[0];
+  const pin = pinOf(version2);
+  if (!pin) return void 0;
+  const span = exactSpan(m, 1, version2);
+  return {
+    version: version2,
+    pin,
+    line,
+    shown,
+    ...span ? { span } : {},
+    ...digest ? { digest: true } : {}
+  };
+};
+var fromComposer = (text, lines2) => {
+  let json2;
+  try {
+    json2 = JSON.parse(withoutBom(text));
+  } catch {
+    return [];
+  }
+  if (typeof json2 !== "object" || json2 === null) return [];
+  const record2 = (v) => typeof v === "object" && v !== null && !Array.isArray(v) ? v : void 0;
+  const out = [];
+  const lineAfter = (key) => {
+    const at = lines2.findIndex((l) => l.includes(`"${key}"`));
+    if (at === -1) return -1;
+    return lines2.findIndex((l, i) => i >= at && /^ *"php" *:/.test(l));
+  };
+  const require2 = record2(json2.require)?.php;
+  if (typeof require2 === "string") {
+    const floor = phpFloor(require2);
+    const at = lineAfter("require");
+    if (floor)
+      out.push({ version: floor, pin: "range", line: at + 1 || 1, shown: require2.slice(0, 40) });
+  }
+  const platform = record2(record2(json2.config)?.platform)?.php;
+  if (typeof platform === "string" && pinOf(platform) === "exact") {
+    const at = lineAfter("platform");
+    const m = at === -1 ? null : COMPOSER_VALUE.exec(lines2[at]);
+    const span = m && m[1] === platform ? exactSpan(m, 1, platform) : void 0;
+    out.push({
+      version: platform,
+      pin: "exact",
+      line: at + 1 || 1,
+      shown: platform,
+      ...span ? { span } : {}
+    });
+  }
+  return out;
+};
+var fromWorkflow = (lines2) => {
+  const out = [];
+  for (let i = 0; i < lines2.length && out.length < MAX_DECLARATIONS; i++) {
+    const m = WORKFLOW_KEY.exec(lines2[i]);
+    if (!m) continue;
+    const value = m[1].trim();
+    const valueAt = m.indices?.[1]?.[0] ?? 0;
+    if (value === "" || value.startsWith("#")) {
+      const indent = lines2[i].search(/[^ ]/);
+      for (let j = i + 1; j < lines2.length && out.length < MAX_DECLARATIONS; j++) {
+        const raw = lines2[j];
+        if (raw.trim() === "" || raw.trim().startsWith("#")) continue;
+        const item = raw.search(/[^ ]/) >= indent ? LIST_ITEM.exec(raw) : null;
+        if (!item) break;
+        const version3 = item[1];
+        const pin2 = pinOf(version3);
+        const span = exactSpan(item, 1, version3);
+        if (pin2) out.push({ version: version3, pin: pin2, line: j + 1, shown: version3, ...span ? { span } : {} });
+      }
+      continue;
+    }
+    if (value.startsWith("[")) {
+      const close = value.indexOf("]");
+      if (close === -1) continue;
+      let offset = valueAt + 1;
+      for (const raw of value.slice(1, close).split(",")) {
+        const lead = raw.length - raw.trimStart().length;
+        const literal2 = raw.trim();
+        const quoted = /^(["'])([0-9.]{1,12})\1$/.exec(literal2);
+        const version3 = quoted ? quoted[2] : literal2;
+        const pin2 = pinOf(version3);
+        if (pin2) {
+          const start2 = offset + lead + (quoted ? 1 : 0);
+          out.push({
+            version: version3,
+            pin: pin2,
+            line: i + 1,
+            shown: version3,
+            ...pin2 === "exact" ? { span: [start2, start2 + version3.length] } : {}
+          });
+        }
+        offset += raw.length + 1;
+      }
+      continue;
+    }
+    const scalar = SCALAR.exec(value);
+    if (!scalar) continue;
+    const version2 = scalar[1];
+    const pin = pinOf(version2);
+    if (!pin) continue;
+    const start = valueAt + (value.startsWith('"') || value.startsWith("'") ? 1 : 0);
+    out.push({
+      version: version2,
+      pin,
+      line: i + 1,
+      shown: version2,
+      ...pin === "exact" ? { span: [start, start + version2.length] } : {}
+    });
+  }
+  return out;
+};
+var declaredPhp = (path, text) => {
+  const kind = kindOf(path, text);
+  if (!kind) return [];
+  const lines2 = linesOf(text);
+  const out = [];
+  switch (kind) {
+    case "dockerfile": {
+      const usesArg = /php:\$\{?PHP_VERSION\b/.test(text);
+      lines2.forEach((raw, i) => {
+        const from = FROM.exec(raw);
+        if (from) {
+          const d = fromTag(
+            from[1],
+            from[2] !== void 0,
+            from,
+            i + 1,
+            `php:${from[1]}`
+          );
+          if (d) out.push(d);
+          return;
+        }
+        const arg = usesArg ? ARG.exec(raw) : null;
+        const version2 = arg?.[1];
+        const pin = version2 ? pinOf(version2) : void 0;
+        if (arg && version2 && pin) {
+          const span = exactSpan(arg, 1, version2);
+          out.push({
+            version: version2,
+            pin,
+            line: i + 1,
+            shown: `PHP_VERSION=${version2}`,
+            ...span ? { span } : {}
+          });
+        }
+      });
+      break;
+    }
+    case "compose":
+      lines2.forEach((raw, i) => {
+        const m = IMAGE.exec(raw);
+        const d = m ? fromTag(m[1], m[2] !== void 0, m, i + 1, `php:${m[1]}`) : void 0;
+        if (d) out.push(d);
+      });
+      break;
+    case "php-version": {
+      const i = lines2.findIndex((l) => l.trim() !== "" && !l.trim().startsWith("#"));
+      const raw = i === -1 ? "" : lines2[i];
+      const m = /^ *([0-9.]{1,12}) *$/d.exec(raw);
+      const version2 = m?.[1];
+      const pin = version2 ? pinOf(version2) : void 0;
+      if (m && version2 && pin) {
+        const span = exactSpan(m, 1, version2);
+        out.push({ version: version2, pin, line: i + 1, shown: version2, ...span ? { span } : {} });
+      }
+      break;
+    }
+    case "tool-versions":
+      lines2.forEach((raw, i) => {
+        const m = TOOL_VERSIONS.exec(raw);
+        const version2 = m?.[1];
+        const pin = version2 ? pinOf(version2) : void 0;
+        if (m && version2 && pin) {
+          const span = exactSpan(m, 1, version2);
+          out.push({ version: version2, pin, line: i + 1, shown: version2, ...span ? { span } : {} });
+        }
+      });
+      break;
+    case "composer":
+      return fromComposer(text, lines2);
+    case "workflow":
+      return fromWorkflow(lines2);
+  }
+  return out.slice(0, MAX_DECLARATIONS);
+};
+var BRANCH = /^php([5-9])\.(0|[1-9][0-9]?)$/;
+var RELEASE = /^php([5-9])\.(0|[1-9][0-9]?)\.(0|[1-9][0-9]{0,2})$/;
+var phpNeedle = (event) => {
+  if (event.vendor !== "php") return void 0;
+  const branches = new Set(
+    event.affects.flatMap((t) => t.type === "symbol" ? t.values : []).flatMap((s) => {
+      const m = BRANCH.exec(s);
+      return m ? [`${m[1]}.${m[2]}`] : [];
+    })
+  );
+  if (branches.size === 0) return void 0;
+  const fixed = /* @__PURE__ */ new Map();
+  let oldest;
+  for (const s of (event.replacement?.targets ?? []).flatMap(
+    (t) => t.type === "symbol" ? t.values : []
+  )) {
+    const m = RELEASE.exec(s);
+    if (!m) continue;
+    const v = [Number(m[1]), Number(m[2]), Number(m[3])];
+    fixed.set(`${v[0]}.${v[1]}`, v[2]);
+    if (!oldest || v[0] - oldest[0] < 0 || v[0] === oldest[0] && v[1] < oldest[1]) oldest = v;
+  }
+  return { event, branches, fixed, ...oldest ? { oldestFixed: oldest.join(".") } : {} };
+};
+var phpVerdict = (needle, d) => {
+  const p = parts(d.version);
+  if (!p) return void 0;
+  const branch = `${p[0]}.${p[1]}`;
+  if (!needle.branches.has(branch)) return void 0;
+  const fixed = needle.fixed.get(branch);
+  if (fixed !== void 0 && d.pin !== "floating" && (p[2] ?? 0) >= fixed) return void 0;
+  return {
+    declared: d.version,
+    pin: d.pin,
+    branch,
+    ...fixed !== void 0 ? { fixed: `${branch}.${fixed}` } : {},
+    ...needle.oldestFixed ? { oldestFixed: needle.oldestFixed } : {},
+    ...d.span ? { span: d.span } : {},
+    ...d.digest ? { digest: true } : {}
+  };
+};
+var phpNextStep = (php) => {
+  const moveOn = `PHP ${php.branch} gets no fixed release: move to a supported branch${php.oldestFixed ? ` (PHP ${php.oldestFixed} or later)` : ""}`;
+  if (php.pin === "range") {
+    return {
+      label: "What to do",
+      text: `this constraint allows PHP ${php.declared}, which is affected. Composer does not choose the PHP that runs: make sure every server and image runs ${php.fixed ? `${php.fixed} or later` : "a fixed release"}`
+    };
+  }
+  if (!php.fixed) return { label: "What to do", text: moveOn };
+  if (php.pin === "floating") {
+    return {
+      label: "What to do",
+      text: `this follows the newest PHP ${php.branch} patch: rebuild or re-pull, then check that the running PHP reports ${php.fixed} or later (php -v)`
+    };
+  }
+  return {
+    label: "Upgrade to",
+    text: `PHP ${php.fixed} (same ${php.branch} branch)${php.digest ? "; the image is also pinned by digest: update the digest too" : ""}`
+  };
+};
+var PhpMatcher = class {
+  needles = [];
+  out = [];
+  seen = /* @__PURE__ */ new Set();
+  constructor(feed2) {
+    for (const event of liveEvents(feed2)) {
+      if (event.kind === "feature" || event.kind === "notice") continue;
+      const needle = phpNeedle(event);
+      if (needle) this.needles.push(needle);
+    }
+  }
+  scanFile(file2) {
+    if (this.needles.length === 0 || !isPhpFile(file2.path)) return;
+    for (const d of declaredPhp(file2.path, file2.text)) {
+      for (const needle of this.needles) {
+        const php = phpVerdict(needle, d);
+        if (!php) continue;
+        const key = `${file2.path}|${d.line}|${d.span?.[0] ?? d.shown}|${needle.event.id}`;
+        if (this.seen.has(key)) continue;
+        this.seen.add(key);
+        this.out.push({
+          event: needle.event,
+          via: "runtime",
+          token: d.pin === "range" ? `php ${d.shown}` : d.shown.startsWith("php:") ? d.shown : `php ${d.shown}`,
+          path: file2.path,
+          line: d.line,
+          context: configContextOf(file2.path),
+          php
+        });
+      }
+    }
+  }
+  findings() {
+    return this.out;
+  }
+};
+
+// src/report.ts
+var safe = (s) => Array.from(s, (ch) => {
+  const cp = ch.codePointAt(0) ?? 0;
+  const printable = cp >= 32 && cp <= 126 || cp >= 160 && cp < 8192 || cp >= 12288 && cp < 55296;
+  return printable ? ch : "?";
+}).join("");
+var daysBetween = (fromIso, toIso) => Math.round((Date.parse(toIso) - Date.parse(fromIso)) / 864e5);
+var MONTHS = [
+  "January",
+  "February",
+  "March",
+  "April",
+  "May",
+  "June",
+  "July",
+  "August",
+  "September",
+  "October",
+  "November",
+  "December"
+];
+var deadlineLabel = (event, today2) => {
+  if (event.effectiveMonth && !event.effectiveAt) {
+    const [year, month] = event.effectiveMonth.split("-");
+    const label = `${MONTHS[Number(month) - 1]} ${year}, no exact day announced`;
+    const days2 = daysBetween(today2, `${event.effectiveMonth}-01`);
+    if (today2.slice(0, 7) > event.effectiveMonth) return `ALREADY IN EFFECT since ${label}`;
+    if (days2 <= 0) return `THIS MONTH (${label})`;
+    return `in about ${days2} days (${label})`;
+  }
+  if (!event.effectiveAt)
+    return event.kind === "security" && event.status !== "announced" ? "now (security advisory, no deadline)" : "no date announced yet";
+  const days = daysBetween(today2, event.effectiveAt);
+  if (days < 0) return `ALREADY IN EFFECT since ${event.effectiveAt} (${-days} days ago)`;
+  if (days === 0) return `TODAY (${event.effectiveAt})`;
+  return `in ${days} days (${event.effectiveAt})`;
+};
+var floorOf = (range) => {
+  const m = /^>=?(\d{1,6}(?:\.\d{1,6}){0,2})$/.exec(range.trim());
+  return m ? parseVersion(m[1]) : void 0;
+};
+var before = (a, b) => a[0] - b[0] < 0 || a[0] === b[0] && (a[1] - b[1] < 0 || a[1] === b[1] && a[2] < b[2]);
+var packageTargets = (targets, finding) => {
+  const all = targets.filter((t) => t.type === "package");
+  if (!finding || finding.via !== "package") return all;
+  const at = finding.token.lastIndexOf("@");
+  const name = finding.token.slice(0, at);
+  const declared = parseVersion(finding.token.slice(at + 1));
+  const same = all.filter((t) => t.name === name);
+  if (!declared || same.length === 0) return all;
+  const above = same.map((t) => ({ t, floor: floorOf(t.range) })).filter(
+    (x) => x.floor !== void 0 && before(declared, x.floor)
+  ).sort((a, b) => before(a.floor, b.floor) ? -1 : before(b.floor, a.floor) ? 1 : 0);
+  return above.length > 0 ? [above[0].t] : same;
+};
+var targetText = (t) => {
+  switch (t.type) {
+    case "package":
+      return [`${t.name} ${t.range}`];
+    case "endpoint":
+      return [`${t.method} ${t.path}`];
+    default:
+      return t.values;
+  }
+};
+var replacementOf = (event, finding) => {
+  if (finding?.php) return phpNextStep(finding.php);
+  const targets = event.replacement?.targets ?? [];
+  const note = event.replacement?.note;
+  const packages = packageTargets(targets, finding);
+  if (packages.length > 0)
+    return { label: "Upgrade to", text: packages.flatMap(targetText).join(" or ") };
+  const others = targets.filter((t) => t.type !== "package");
+  if (note && others.every((t) => t.type === "symbol"))
+    return { label: others.length > 0 ? "Migrate to" : "What to do", text: note };
+  if (others.length > 0)
+    return {
+      label: "Migrate to",
+      text: `${others.flatMap(targetText).join(", ")}${note ? ` (${note})` : ""}`
+    };
+  return void 0;
+};
+var NO_REPLACEMENT = "Replacement: none named yet, by the vendor or by Harbyn; check the source before changing anything";
+var replacementLine = (event, finding) => {
+  const r = replacementOf(event, finding);
+  return r ? `${r.label}: ${r.text}` : NO_REPLACEMENT;
+};
+var replacementTargets = (event, finding) => {
+  if (finding?.php) return finding.php.fixed ? [`php${finding.php.fixed}`] : [];
+  const targets = event.replacement?.targets ?? [];
+  return [
+    ...packageTargets(targets, finding),
+    ...targets.filter((t) => t.type !== "package")
+  ].flatMap(targetText);
+};
+var toJson = (result2) => ({
+  schemaVersion: 1,
+  stats: result2.stats,
+  vendors: result2.usage.map((u) => ({ id: u.vendor.id, evidence: [...u.evidence].sort() })),
+  skippedNestedRepos: result2.stats.skippedNestedRepos,
+  findings: result2.findings.map((f) => ({
+    eventId: f.event.id,
+    kind: f.event.kind,
+    severity: f.event.severity,
+    effectiveAt: f.event.effectiveAt ?? null,
+    effectiveMonth: f.event.effectiveMonth ?? null,
+    via: f.via,
+    context: f.context,
+    token: f.token,
+    path: f.path,
+    line: f.line,
+    replacement: replacementTargets(f.event, f),
+    replacementNote: f.event.replacement?.note ?? null,
+    nextStep: replacementLine(f.event, f),
+    source: f.event.sources[0]?.url ?? null
+  })),
+  dependencies: result2.inventory?.dependencies ?? []
+});
+var actionable = (result2) => result2.findings.filter((f) => f.context === "code");
+
+// src/github.ts
+var MAX_ANNOTATIONS_PER_LEVEL = 10;
+var MAX_SUMMARY_ROWS = 500;
+var MAX_TITLE = 200;
+var MAX_MESSAGE = 900;
+var cap = (s, max) => s.length > max ? `${s.slice(0, max - 3)}...` : s;
+var escapeData = (s) => s.replaceAll("%", "%25").replaceAll("\r", "%0D").replaceAll("\n", "%0A");
+var escapeProperty = (s) => escapeData(s).replaceAll(":", "%3A").replaceAll(",", "%2C");
+var workflowCommand = (level, title, message) => `::${level} title=${escapeProperty(safe(title))}::${escapeData(cap(safe(message), MAX_MESSAGE))}`;
+var levelOf = (finding, today2) => {
+  if (finding.event.kind === "security" && finding.event.severity === "critical") return "error";
+  const deadline = deadlineOf(finding.event)?.date;
+  return deadline !== void 0 && deadline <= today2 ? "error" : "warning";
+};
+var replacementOf2 = (finding) => {
+  const r = replacementOf(finding.event, finding);
+  return r ? `${r.label}: ${r.text}` : "";
+};
+var repoPath = (path, prefix) => prefix ? `${prefix}/${path}` : path;
+var byDeadline = (a, b) => (deadlineOf(a.event)?.date ?? "9999").localeCompare(deadlineOf(b.event)?.date ?? "9999") || a.path.localeCompare(b.path) || a.line - b.line;
+var toAnnotations = (result2, today2, pathPrefix2 = "") => {
+  const shown = { error: 0, warning: 0, notice: 0 };
+  const lines2 = [];
+  for (const finding of [...actionable(result2)].sort(byDeadline)) {
+    const level = levelOf(finding, today2);
+    if (shown[level] >= MAX_ANNOTATIONS_PER_LEVEL) continue;
+    shown[level] += 1;
+    const replacement = replacementOf2(finding);
+    const message = [
+      `${safe(finding.token)}: ${deadlineLabel(finding.event, today2)}.`,
+      replacement ? `${safe(replacement)}.` : "No replacement named yet.",
+      `Source: ${safe(finding.event.sources[0]?.url ?? "-")}`
+    ].filter(Boolean).join(" ");
+    const props = `file=${escapeProperty(safe(repoPath(finding.path, pathPrefix2)))},line=${finding.line},title=${escapeProperty(cap(safe(finding.event.title), MAX_TITLE))}`;
+    lines2.push(`::${level} ${props}::${escapeData(cap(message, MAX_MESSAGE))}`);
+  }
+  return lines2;
+};
+var mdText = (s) => Array.from(
+  safe(s),
+  (ch) => /[A-Za-z0-9 .,:;/=?@+-]/.test(ch) ? ch : `&#${ch.codePointAt(0)};`
+).join("");
+var mdLink = (url2) => url2 && /^https:\/\/[A-Za-z0-9.-]+(?:\/[A-Za-z0-9._~%/-]*)?(?:#[A-Za-z0-9._~-]*)?$/.test(url2) ? `[source](${url2})` : mdText(url2 ?? "-");
+var toStepSummary = (result2, today2, productName, pathPrefix2 = "", uploading = false) => {
+  const findings = [...actionable(result2)].sort(byDeadline);
+  const out = [`## ${mdText(productName)} scan`, ""];
+  if (findings.length === 0) {
+    out.push("No known dated vendor changes affect this repository.", "");
+  } else {
+    const errors = findings.filter((f) => levelOf(f, today2) === "error").length;
+    out.push(
+      `**${findings.length}** ${findings.length === 1 ? "line is" : "lines are"} affected by vendor changes (${errors} already due).`,
+      ""
+    );
+    out.push("| When | Change | Where | Use instead | |", "| --- | --- | --- | --- | --- |");
+    for (const f of findings.slice(0, MAX_SUMMARY_ROWS)) {
+      const replacement = replacementOf2(f);
+      out.push(
+        `| ${mdText(deadlineLabel(f.event, today2))} | ${mdText(f.event.title)} | ${mdText(`${repoPath(f.path, pathPrefix2)}:${f.line}`)} ${mdText(f.token)} | ${replacement ? mdText(replacement) : "-"} | ${mdLink(f.event.sources[0]?.url)} |`
+      );
+    }
+    out.push("");
+    if (findings.length > MAX_SUMMARY_ROWS) {
+      out.push(
+        `The table shows the first ${MAX_SUMMARY_ROWS}, by deadline. The JSON report (the \`report\` output) has all of them.`,
+        ""
+      );
+    }
+    const perLevel = { error: errors, warning: findings.length - errors };
+    if (perLevel.error > MAX_ANNOTATIONS_PER_LEVEL || perLevel.warning > MAX_ANNOTATIONS_PER_LEVEL) {
+      out.push(
+        `GitHub shows at most ${MAX_ANNOTATIONS_PER_LEVEL} annotations of each level on the lines; the table lists the rest.`,
+        ""
+      );
+    }
+  }
+  const low = result2.findings.length - findings.length;
+  if (low > 0)
+    out.push(
+      `${low} more in tests, docs and model catalogs (low confidence) are not annotated.`,
+      ""
+    );
+  const scanned = `${result2.stats.scanned} ${result2.stats.scanned === 1 ? "file" : "files"} scanned on the runner.`;
+  out.push(
+    uploading ? `${scanned} The upload below is everything that leaves the runner.` : `${scanned} Nothing about this repository was sent anywhere.`,
+    ""
+  );
+  return out.join("\n");
+};
+
 // src/inventory.ts
 var INVENTORY_FILES = /* @__PURE__ */ new Set([
   "package-lock.json",
@@ -13665,10 +14029,10 @@ var MAX_LOCKFILE_BYTES = 32 * 1024 * 1024;
 var MAX_DEPENDENCIES = 2e4;
 var NPM_NAME = NPM_PACKAGE_NAME;
 var PYPI_NAME = PYPI_PACKAGE_NAME;
-var VERSION2 = PACKAGE_VERSION;
+var VERSION3 = PACKAGE_VERSION;
 var PUBLIC_NPM = /^https:\/\/registry\.(?:npmjs\.org|yarnpkg\.com)\//;
 var PUBLIC_PYPI = /^https:\/\/(?:pypi\.org\/simple|pypi\.python\.org\/simple|files\.pythonhosted\.org)\/?/;
-var basename = (path) => path.slice(path.lastIndexOf("/") + 1);
+var basename2 = (path) => path.slice(path.lastIndexOf("/") + 1);
 var dirname2 = (path) => path.includes("/") ? path.slice(0, path.lastIndexOf("/")) : "";
 var unquote = (s) => s.trim().replace(/^["']|["']$/g, "");
 var normalisePypi = (name) => name.toLowerCase().replace(/[-_.]+/g, "-");
@@ -13904,7 +14268,7 @@ var InventoryCollector = class {
   nonPublic = 0;
   invalid = 0;
   add(path, text) {
-    const name = basename(path);
+    const name = basename2(path);
     const dir = dirname2(path);
     if (name === "package.json") {
       const direct = npmDirect(text);
@@ -13955,7 +14319,7 @@ var InventoryCollector = class {
           continue;
         }
         const name = raw.ecosystem === "pypi" ? normalisePypi(raw.name) : raw.name;
-        if (!(raw.ecosystem === "npm" ? NPM_NAME : PYPI_NAME).test(name) || !VERSION2.test(raw.version)) {
+        if (!(raw.ecosystem === "npm" ? NPM_NAME : PYPI_NAME).test(name) || !VERSION3.test(raw.version)) {
           this.invalid++;
           continue;
         }
@@ -14011,9 +14375,9 @@ var RUNTIME_FILES = /* @__PURE__ */ new Set([
   "template.yaml",
   "template.yml"
 ]);
-var MAX_LINE = 1e3;
-var MAX_SPEC = 100;
-var MAX_DECLARATIONS = 100;
+var MAX_LINE2 = 1e3;
+var MAX_SPEC2 = 100;
+var MAX_DECLARATIONS2 = 100;
 var NODE_SYMBOL = /^node([1-9][0-9]{0,2})$/;
 var VERCEL_SYMBOL = /^(?:node|nodejs)?([1-9][0-9]{0,2})\.x$|^(?:node|nodejs)([1-9][0-9]{0,2})$/;
 var PYTHON_SYMBOL = /^python([23])\.(0|[1-9][0-9]?)$/;
@@ -14036,7 +14400,7 @@ var SYMBOL_GRAMMARS = {
 var runtimeSymbol = (vendor2, symbol2) => Object.hasOwn(SYMBOL_GRAMMARS, vendor2) && symbol2.length <= 32 ? SYMBOL_GRAMMARS[vendor2]?.(symbol2) : void 0;
 var NODE_COMPARATOR = /^(>=|<=|>|<|=|\^|~>|~)?v?([0-9]{1,3}|[xX*])(?:\.([0-9]{1,6}|[xX*]))?(?:\.([0-9]{1,6}|[xX*]))?(?:-[0-9A-Za-z.]{1,32})?$/;
 var nodeFloor = (spec) => {
-  if (spec.length > MAX_SPEC) return void 0;
+  if (spec.length > MAX_SPEC2) return void 0;
   const alternatives = spec.split("||");
   if (alternatives.length > 8) return void 0;
   let floor;
@@ -14063,11 +14427,11 @@ var nodeFloor = (spec) => {
 };
 var PYTHON_SPEC = /^(===|==|~=|>=|<=|!=|>|<) *([0-9])(?:\.([0-9]{1,2}))?(?:\.[0-9*]{1,6})?(?:\.[0-9*]{1,6})?$/;
 var pythonFloor = (spec) => {
-  if (spec.length > MAX_SPEC) return void 0;
-  const parts = spec.split(",");
-  if (parts.length > 8) return void 0;
+  if (spec.length > MAX_SPEC2) return void 0;
+  const parts2 = spec.split(",");
+  if (parts2.length > 8) return void 0;
   let lower;
-  for (const part of parts) {
+  for (const part of parts2) {
     const m = PYTHON_SPEC.exec(part.trim());
     if (!m) return void 0;
     if (m[1] === "<" || m[1] === "<=" || m[1] === "!=") continue;
@@ -14084,10 +14448,10 @@ var TOML_SECTION = /^ *\[([A-Za-z0-9_.-]{1,64})\] *(?:#.*)?$/;
 var REQUIRES_PYTHON = /^ *requires-python *= *["']([^"']{1,100})["'] *(?:#.*)?$/;
 var SERVERLESS_RUNTIME = /^ *runtime: *["']?([A-Za-z0-9.]{1,40})["']? *(?:#.*)?$/;
 var SAM_RUNTIME = /^ *Runtime: *["']?([A-Za-z0-9.]{1,40})["']? *(?:#.*)?$/;
-var basename2 = (path) => path.slice(path.lastIndexOf("/") + 1);
+var basename3 = (path) => path.slice(path.lastIndexOf("/") + 1);
 var dirname3 = (path) => path.includes("/") ? path.slice(0, path.lastIndexOf("/")) : "";
-var withoutBom = (text) => text.charCodeAt(0) === 65279 ? text.slice(1) : text;
-var linesOf = (text) => withoutBom(text).split("\n").map((l) => l.length > MAX_LINE ? "" : l.replace(/\r$/, "").replaceAll("	", " "));
+var withoutBom2 = (text) => text.charCodeAt(0) === 65279 ? text.slice(1) : text;
+var linesOf2 = (text) => withoutBom2(text).split("\n").map((l) => l.length > MAX_LINE2 ? "" : l.replace(/\r$/, "").replaceAll("	", " "));
 var firstValue = (lines2) => {
   for (let i = 0; i < lines2.length; i++) {
     const text = lines2[i].trim();
@@ -14098,7 +14462,7 @@ var firstValue = (lines2) => {
 var fromPackageJson = (text, lines2) => {
   let json2;
   try {
-    json2 = JSON.parse(withoutBom(text));
+    json2 = JSON.parse(withoutBom2(text));
   } catch {
     return [];
   }
@@ -14119,9 +14483,9 @@ var fromPackageJson = (text, lines2) => {
   ];
 };
 var declaredRuntimes = (path, text) => {
-  const name = basename2(path);
+  const name = basename3(path);
   if (!RUNTIME_FILES.has(name)) return [];
-  const lines2 = linesOf(text);
+  const lines2 = linesOf2(text);
   const out = [];
   switch (name) {
     case "package.json":
@@ -14173,7 +14537,7 @@ var declaredRuntimes = (path, text) => {
       break;
     }
   }
-  return out.slice(0, MAX_DECLARATIONS);
+  return out.slice(0, MAX_DECLARATIONS2);
 };
 var RuntimeMatcher = class {
   needles = /* @__PURE__ */ new Map();
@@ -14197,7 +14561,7 @@ var RuntimeMatcher = class {
     }
   }
   scanFile(file2) {
-    const name = basename2(file2.path);
+    const name = basename3(file2.path);
     if (name === "vercel.json") this.vercelDirs.add(dirname3(file2.path));
     if (this.needles.size === 0 || !RUNTIME_FILES.has(name)) return;
     for (const runtime of declaredRuntimes(file2.path, file2.text))
@@ -14513,6 +14877,7 @@ var scan = (root, feed2, options = {}) => {
   const usage = /* @__PURE__ */ new Map();
   const matcher = new Matcher(feed2);
   const runtimes = new RuntimeMatcher(feed2);
+  const php = new PhpMatcher(feed2);
   const inventory2 = new InventoryCollector();
   for (const file2 of walk(root, stats, {
     ...options,
@@ -14520,9 +14885,10 @@ var scan = (root, feed2, options = {}) => {
   })) {
     matcher.scanFile(file2, findings, usage);
     runtimes.scanFile(file2);
+    php.scanFile(file2);
     inventory2.add(file2.path, file2.text);
   }
-  findings.push(...runtimes.findings());
+  findings.push(...runtimes.findings(), ...php.findings());
   return {
     findings: preferAdvisories(findings),
     usage: [...usage.values()].sort((a, b) => a.vendor.id.localeCompare(b.vendor.id)),
